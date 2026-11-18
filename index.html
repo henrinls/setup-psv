@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=2.10.0">
+<link rel="stylesheet" href="style.css?v=2.11.0">
 </head>
 <body>
 <div id="map"></div>
@@ -46,7 +46,8 @@
 <section id="sheet" class="hidden">
   <div class="grab" id="grab"><span></span></div>
   <div class="tabs">
-    <button data-tab="reglages" class="on">Réglages</button>
+    <button data-tab="reglages" class="on">Portes</button>
+    <button data-tab="pilote">Pilote</button>
     <button data-tab="zones">Zones</button>
     <button id="btnClose" class="close">✕</button>
   </div>
@@ -72,6 +73,21 @@
       </div>
     </div>
 
+    <h3>Branche d'approche avant setup</h3>
+    <div class="grid2">
+      <div><label>Longueur (m)</label><input id="p_legLen" inputmode="decimal"></div>
+      <div><label>Durée sur la branche (s)</label><input id="p_legTime" inputmode="decimal"></div>
+      <div><label>Hauteur au début (m)</label><input id="p_legHeight" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Perpendiculaire à l'axe, venant de l'extérieur et dirigée vers l'axe ; elle finit au point de setup.</p>
+
+    <h3>Export</h3>
+    <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4 paysage)</button></div>
+    <p class="hint">Toujours en paysage. La page est tournée pour que la branche d'approche monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
+  </div>
+
+  <div id="tab-pilote" class="tab hidden">
+    <p class="hint">Ta façon de tourner : ces réglages sont communs à <b>toutes</b> tes zones. Les modifier met à jour toutes les zones enregistrées.</p>
     <h3>Temps du virage</h3>
     <div class="grid2">
       <div><label>Abattée + rotation (s)</label><input id="p_t1" inputmode="decimal"></div>
@@ -88,20 +104,9 @@
     <h3>Point de snap</h3>
     <div class="grid2">
       <div><label>Déport arrière (m)</label><input id="p_recBack" inputmode="decimal"></div>
-      <div><label>Vent de référence (m/s)</label><input id="p_vref" inputmode="decimal"></div>
+      <div><label>Vent de référence des cercles (m/s)</label><input id="p_vref" inputmode="decimal"></div>
     </div>
 
-    <h3>Branche d'approche avant setup</h3>
-    <div class="grid2">
-      <div><label>Longueur (m)</label><input id="p_legLen" inputmode="decimal"></div>
-      <div><label>Durée sur la branche (s)</label><input id="p_legTime" inputmode="decimal"></div>
-      <div><label>Hauteur au début (m)</label><input id="p_legHeight" inputmode="decimal"></div>
-    </div>
-    <p class="hint">Perpendiculaire à l'axe, venant de l'extérieur et dirigée vers l'axe ; elle finit au point de setup.</p>
-
-    <h3>Export</h3>
-    <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4 paysage)</button></div>
-    <p class="hint">Toujours en paysage. La page est tournée pour que la branche d'approche monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
   </div>
 
   <div id="tab-zones" class="tab hidden">
@@ -151,9 +156,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=2.10.0"></script>
-<script src="vendor/leaflet-rotate.js?v=2.10.0"></script>
-<script src="geo.js?v=2.10.0"></script>
-<script src="app.js?v=2.10.0"></script>
+<script src="vendor/leaflet.js?v=2.11.0"></script>
+<script src="vendor/leaflet-rotate.js?v=2.11.0"></script>
+<script src="geo.js?v=2.11.0"></script>
+<script src="app.js?v=2.11.0"></script>
 </body>
 </html>

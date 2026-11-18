@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.10.0';
+const VERSION = '2.11.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -42,6 +42,15 @@ function upgrade(z) {
 let zones = store.get('psv.zones', []).map(upgrade);
 let current = upgrade(store.get('psv.current', null)) || newZone(null);
 store.set('psv.zones', zones);
+
+// ---------- Profil pilote : réglages communs à toutes les zones ----------
+// Temps du virage, déports du setup et du point de snap, vent de référence : c'est la façon de tourner
+// d'Henri, pas une propriété de la zone. Une modification se répercute sur toutes les zones enregistrées.
+const PROFILE_KEYS = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref'];
+let profile = store.get('psv.profile', null);
+if (!profile) { profile = {}; PROFILE_KEYS.forEach(k => profile[k] = current.params[k]); store.set('psv.profile', profile); }
+function applyProfile(z) { if (z && z.params) PROFILE_KEYS.forEach(k => { z.params[k] = profile[k]; }); }
+applyProfile(current); zones.forEach(applyProfile); store.set('psv.zones', zones);
 
 function newZone(center) {
   return upgrade({
@@ -380,7 +389,12 @@ numFields.forEach(k => {
   $('p_' + k).addEventListener('input', e => {
     const v = parseFloat(String(e.target.value).replace(',', '.'));
     if (isNaN(v)) return;
-    current.params[k] = v; persist(); redraw();
+    current.params[k] = v;
+    if (PROFILE_KEYS.includes(k)) { // réglage pilote : toutes les zones suivent
+      profile[k] = v; store.set('psv.profile', profile);
+      zones.forEach(applyProfile); store.set('psv.zones', zones);
+    }
+    persist(); redraw();
   });
   $('p_' + k).addEventListener('blur', () => fillInputs([k]));
 });
@@ -551,7 +565,7 @@ function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', 
 function openSheet(tab) {
   $('sheet').classList.remove('hidden'); setSheetSize(sheetSize);
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  ['reglages', 'zones'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
+  ['reglages', 'pilote', 'zones'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
   if (tab === 'zones') renderZones();
 }
 function closeSheet() { $('sheet').classList.add('hidden'); }
@@ -596,7 +610,7 @@ function renderZones() {
 }
 function loadZone(id) {
   const z = zones.find(x => x.id === id); if (!z) return;
-  current = upgrade(clone(z));
+  current = upgrade(clone(z)); applyProfile(current);
   resetGateMarkers(); placing = null; setBanner(null);
   map.setBearing(current.bearing || 0);
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
@@ -971,7 +985,7 @@ $('pdfShare').addEventListener('click', async () => {
 
 // ---------- Sauvegarde ----------
 $('btnExport').addEventListener('click', async () => {
-  const data = JSON.stringify({ v: 2, zones, current, lastParams: current.params });
+  const data = JSON.stringify({ v: 2, zones, current, lastParams: current.params, profile });
   try { await navigator.clipboard.writeText(data); toast('Données copiées : colle-les dans une note pour les garder'); }
   catch (e) { $('ioText').value = data; $('ioText').classList.remove('hidden'); toast('Copie auto impossible : sélectionne le texte'); }
 });
@@ -981,8 +995,8 @@ $('btnImportGo').addEventListener('click', async () => {
     const d = JSON.parse($('ioText').value);
     if (!Array.isArray(d.zones)) throw 0;
     if (!(await ask(`Remplacer tes zones par les ${d.zones.length} zones importées ?`))) return;
-    zones = d.zones.map(upgrade); store.set('psv.zones', zones);
-    if (d.current) { current = upgrade(d.current); resetGateMarkers(); }
+    zones = d.zones.map(upgrade); zones.forEach(applyProfile); store.set('psv.zones', zones);
+    if (d.current) { current = upgrade(d.current); applyProfile(current); resetGateMarkers(); }
     fillInputs(); persist(); redraw(); renderZones(); toast('Import réussi');
     $('ioText').classList.add('hidden'); $('btnImportGo').classList.add('hidden');
   } catch (e) { toast('Données illisibles'); }
