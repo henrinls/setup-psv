@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.0.0">
+<link rel="stylesheet" href="style.css?v=3.0.1">
 </head>
 <body>
 <div id="map"></div>
@@ -77,8 +77,11 @@
       </div>
     </div>
 
-    <h3>Export</h3>
-    <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4 paysage)</button></div>
+    <h3>Enregistrer et exporter</h3>
+    <div class="row grid2">
+      <button id="btnSaveZone" class="wide primary">💾 Enregistrer</button>
+      <button id="btnPdf" class="wide primary">📄 PDF A4</button>
+    </div>
     <p class="hint">Toujours en paysage. La page est tournée pour que l'étape de base monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
   </div>
 
@@ -115,10 +118,7 @@
 
   <div id="tab-zones" class="tab hidden">
     <h3>Zone actuelle</h3>
-    <div class="row grid2">
-      <button id="btnNewZone" class="wide">＋ Nouvelle zone</button>
-      <button id="btnSaveZone" class="wide primary">💾 Enregistrer</button>
-    </div>
+    <div class="row"><button id="btnNewZone" class="wide">＋ Nouvelle zone</button></div>
     <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour du couloir)</button></div>
     <div id="offlineStatus" class="hint"></div>
 
@@ -163,9 +163,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.0.0"></script>
-<script src="vendor/leaflet-rotate.js?v=3.0.0"></script>
-<script src="geo.js?v=3.0.0"></script>
-<script src="app.js?v=3.0.0"></script>
+<script src="vendor/leaflet.js?v=3.0.1"></script>
+<script src="vendor/leaflet-rotate.js?v=3.0.1"></script>
+<script src="geo.js?v=3.0.1"></script>
+<script src="app.js?v=3.0.1"></script>
 </body>
 </html>

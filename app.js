@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.0.0';
+const VERSION = '3.0.1';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -660,7 +660,7 @@ function startNewZone(center, zoom) {
   resetGateMarkers(); stopMeasure();
   map.setView([center.lat, center.lng], current.zoom);
   placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
-  toast('Place la porte 1, puis la porte 2, puis « Enregistrer » dans l\'onglet Zones');
+  toast('Place la porte 1, puis la porte 2, puis « Enregistrer la zone » dans l\'onglet Portes');
 }
 $('btnNewZone').addEventListener('click', () => { $('searchResults').innerHTML = ''; $('nzDlg').classList.remove('hidden'); });
 $('nzCancel').addEventListener('click', () => $('nzDlg').classList.add('hidden'));
