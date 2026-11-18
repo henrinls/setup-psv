@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -453,17 +453,18 @@ $('btnLocate').addEventListener('click', () => locate(true));
 // Appuis successifs : nord en haut → branche de la 1re config vers le haut → branche de la 2e (si cap différent) → nord…
 // leaflet-rotate : setBearing(b) tourne la carte de +b, donc le cap h est en haut avec b = -h.
 $('btnNorth').addEventListener('click', () => {
-  const norm = a => ((a % 360) + 360) % 360, diff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+  const norm = x => ((x % 360) + 360) % 360, diff = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
   const targets = [{ b: 0, msg: 'Nord en haut' }];
   configs().forEach(c => {
     const b = norm(-c.geo.legHeading);
-    const same = targets.find(t => diff(t.b, b) < 1), m = `Branche ${cfgName(c)} vers le haut`;
+    const same = targets.find(t => diff(t.b, b) < 3), m = `Branche ${cfgName(c)} vers le haut`;
     if (same) same.msg += ' · ' + m; else targets.push({ b, msg: m });
   });
-  const cur = norm(map.getBearing()), i = targets.findIndex(t => diff(t.b, cur) < 1);
+  const cur = norm(map.getBearing()), i = targets.findIndex(t => diff(t.b, cur) < 2);
   const next = i < 0 ? targets[0] : targets[(i + 1) % targets.length];
-  map.setBearing(next.b, { animate: true, duration: 0.4 });
-  current.bearing = next.b; persist(); toast(next.msg);
+  map.setBearing(next.b); // sans animation : plus fiable sur iPhone
+  current.bearing = next.b; syncCompass(); persist();
+  toast(targets.length === 1 && i === 0 ? 'Branche déjà vers le haut avec le nord en haut' : next.msg);
 });
 $('btnFit').addEventListener('click', () => { if (hasGates()) fitFigure(); else toast('Place d\'abord les portes'); });
 
