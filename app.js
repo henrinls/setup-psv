@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.2.2';
+const VERSION = '3.3.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -604,8 +604,10 @@ function openSheet(tab) {
   if (tab === 'reglages') renderZones();
 }
 function closeSheet() { $('sheet').classList.add('hidden'); }
-$('btnSettings').addEventListener('click', () => $('sheet').classList.contains('hidden') ? openSheet(lastTab) : closeSheet());
-$('btnZones').addEventListener('click', () => openSheet('reglages'));
+// Les deux boutons en haut à gauche ouvrent leur onglet ; second appui sur le même = fermer
+function toggleTab(t) { if (!$('sheet').classList.contains('hidden') && lastTab === t) closeSheet(); else openSheet(t); }
+$('btnManeuver').addEventListener('click', () => toggleTab('pilote'));
+$('btnZones').addEventListener('click', () => toggleTab('reglages'));
 $('btnClose').addEventListener('click', closeSheet);
 document.querySelectorAll('.tabs [data-tab]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.tab)));
 

@@ -5,7 +5,7 @@ html,body{margin:0;height:100%;background:#111;color:#eee;font:15px/1.4 -apple-s
 button{font:inherit;color:#eee;background:#2a2a2a;border:1px solid #444;border-radius:10px;padding:8px 10px;cursor:pointer}
 button.on,button.primary{background:#1f6fb2;border-color:#1f6fb2;color:#fff}
 input,textarea{font:inherit;font-size:16px;color:#eee;background:#1b1b1b;border:1px solid #444;border-radius:9px;padding:8px;width:100%}
-#top{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;padding:calc(30px + env(safe-area-inset-top)) 10px 8px;z-index:1000;pointer-events:none}
+#top{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:flex-start;padding:calc(30px + env(safe-area-inset-top)) 10px 8px;z-index:1000;pointer-events:none}
 #top>*{pointer-events:auto}
 #top .spacer{flex:1;pointer-events:none}
 .pill{background:rgba(20,20,20,.85);border-color:#555;max-width:44vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -47,7 +47,7 @@ ul{list-style:none;padding:0;margin:0}
 .leaflet-control-attribution{font-size:9px}
 .leaflet-bottom.leaflet-left .leaflet-control-scale{margin-bottom:calc(6px + env(safe-area-inset-bottom))}
 button:disabled{opacity:.6}
-#quick{position:fixed;left:8px;top:calc(88px + env(safe-area-inset-top));max-height:calc(100% - 140px - env(safe-area-inset-top));display:flex;flex-direction:column;flex-wrap:wrap;align-content:flex-start;gap:7px;z-index:950}
+#quick{position:fixed;left:8px;top:calc(140px + env(safe-area-inset-top));max-height:calc(100% - 192px - env(safe-area-inset-top));display:flex;flex-direction:column;flex-wrap:wrap;align-content:flex-start;gap:7px;z-index:950}
 #quick button{min-width:54px;height:38px;padding:0 7px;border-radius:11px;background:rgba(20,20,20,.82);border:2px solid #555;font-weight:700;font-size:13px;color:#ccc}
 #quick button.on{color:#fff;border-color:#ddd;background:rgba(40,40,40,.9)}
 #quick .qa,#quick .qb{border-color:#ff2020}
@@ -80,3 +80,4 @@ button.danger{border-color:#a33;color:#ff8a8a}
 #searchResults .res{width:100%;text-align:left;margin:3px 0;background:#202020;font-size:13px}
 .corrmid span{display:block;width:18px;height:18px;margin:8px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid #fff;box-shadow:0 0 0 1.5px #000}
 .corrmid{-webkit-touch-callout:none;user-select:none}.corrmid.lifting span{transform:scale(1.5)}
+#top .leftcol{display:flex;flex-direction:column;align-items:flex-start;gap:7px;pointer-events:none}#top .leftcol>*{pointer-events:auto}

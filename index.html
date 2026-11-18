@@ -12,19 +12,21 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.2.2">
+<link rel="stylesheet" href="style.css?v=3.3.0">
 </head>
 <body>
 <div id="map"></div>
 
 <header id="top">
-  <button id="btnZones" class="pill" title="Zones">☰ <span id="zoneName">Nouvelle zone</span></button>
+  <div class="leftcol">
+    <button id="btnManeuver" class="pill" title="Manœuvre">⚙ Manœuvre</button>
+    <button id="btnZones" class="pill" title="Zones">☰ <span id="zoneName">Nouvelle zone</span></button>
+  </div>
   <div class="spacer"></div>
   <button id="btnNorth" class="round" title="Nord en haut"><span id="compassNeedle">▲<small>N</small></span></button>
   <button id="btnAxisUp" class="round" title="Étape de base vers le haut"><span class="axisIco">↑<small>AXE</small></span></button>
   <button id="btnFit" class="round" title="Voir toute la figure">⤢</button>
   <button id="btnLocate" class="round" title="Ma position">⌖</button>
-  <button id="btnSettings" class="round" title="Réglages">⚙</button>
 </header>
 
 <div id="banner" class="hidden"></div>
@@ -47,7 +49,7 @@
   <div class="grab" id="grab"><span></span></div>
   <div class="tabs">
     <button data-tab="pilote">Manœuvre</button>
-    <button data-tab="reglages" class="on">Zone</button>
+    <button data-tab="reglages" class="on">Zones</button>
     <button id="btnClose" class="close">✕</button>
   </div>
 
@@ -166,9 +168,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.2.2"></script>
-<script src="vendor/leaflet-rotate.js?v=3.2.2"></script>
-<script src="geo.js?v=3.2.2"></script>
-<script src="app.js?v=3.2.2"></script>
+<script src="vendor/leaflet.js?v=3.3.0"></script>
+<script src="vendor/leaflet-rotate.js?v=3.3.0"></script>
+<script src="geo.js?v=3.3.0"></script>
+<script src="app.js?v=3.3.0"></script>
 </body>
 </html>
