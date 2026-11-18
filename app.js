@@ -1,5 +1,10 @@
 'use strict';
-const VERSION = '2.6.0';
+// Filet de sécurité : toute erreur s'affiche au lieu de laisser une carte vide
+window.addEventListener('error', e => {
+  const t = document.getElementById('toast');
+  if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
+});
+const VERSION = '2.6.1';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -291,7 +296,9 @@ function updateAxisInfo() {
 }
 
 // ---------- Interface ----------
-function $(id) { return document.getElementById(id); }
+// Élément absent (ex. page en cache d'une version plus ancienne) : on renvoie un élément fantôme
+// plutôt que de planter toute l'appli.
+function $(id) { return document.getElementById(id) || document.createElement('div'); }
 function setBanner(t) { const b = $('banner'); if (!t) b.classList.add('hidden'); else { b.textContent = t; b.classList.remove('hidden'); } }
 let toastT;
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 2800); }
@@ -822,7 +829,7 @@ if (hasGates()) fitFigure();
 redraw();
 if (!current.gateA && !current.id && current.zoom < 10) locate(true); else locate(false);
 // Mise à jour automatique : vérifie une nouvelle version à chaque retour sur l'appli et recharge dès qu'elle est installée
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   const hadController = !!navigator.serviceWorker.controller;
   let reloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloading) { reloading = true; location.reload(); } });

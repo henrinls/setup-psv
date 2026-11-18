@@ -1,5 +1,5 @@
 // Service worker : appli disponible hors-ligne + images satellite en cache.
-const APP_CACHE = 'psv-app-v2.6.0';
+const APP_CACHE = 'psv-app-v2.6.1';
 const TILE_CACHE = 'psv-tiles-v2';
 const APP_FILES = ['./', 'index.html', 'style.css', 'geo.js', 'app.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'vendor/leaflet.js', 'vendor/leaflet-rotate.js', 'vendor/leaflet.css', 'vendor/jspdf.umd.min.js',
@@ -7,7 +7,7 @@ const APP_FILES = ['./', 'index.html', 'style.css', 'geo.js', 'app.js', 'manifes
   'vendor/images/layers.png', 'vendor/images/layers-2x.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(APP_CACHE).then(c => c.addAll(APP_FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(
@@ -31,7 +31,8 @@ self.addEventListener('fetch', e => {
   }
   if (url.origin === location.origin) {
     // Appli : réseau d'abord (pour recevoir les mises à jour), cache si pas de réseau
-    const net = Promise.race([fetch(e.request), new Promise((_, rej) => setTimeout(() => rej(new Error('lent')), 3500))]);
+    // cache: 'no-cache' : on revalide toujours auprès du serveur (GitHub Pages met 10 min de cache navigateur)
+    const net = Promise.race([fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }), new Promise((_, rej) => setTimeout(() => rej(new Error('lent')), 3500))]);
     e.respondWith(net.then(r => {
       const copy = r.clone(); caches.open(APP_CACHE).then(c => c.put(e.request, copy));
       return r;
