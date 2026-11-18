@@ -1,16 +1,16 @@
 'use strict';
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
   t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
   vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, labels: true, rec: true
 };
-const PALETTE = {
-  A: { setup: '#ff7a1a', rec: '#22d3ee', leg: '#e879f9' },
-  B: { setup: '#a3e635', rec: '#60a5fa', leg: '#fb7185' }
-};
-const GATE_COLOR = '#ffd400', AXIS_COLOR = '#ffffff';
+// Mêmes couleurs pour les deux configurations (demande d'Henri)
+const CFG_COLORS = { setup: '#ff2020', rec: '#ffd400', leg: '#000000' };
+const PALETTE = { A: CFG_COLORS, B: CFG_COLORS };
+const GATE_COLOR = '#ff8c00', AXIS_COLOR = '#ffffff';
+const isDark = c => c === '#000000';
 
 // ---------- Stockage ----------
 const store = {
@@ -117,7 +117,7 @@ function syncCompass() {
   $('btnNorth').classList.toggle('rotated', Math.abs(((b % 360) + 360) % 360) > 0.5);
 }
 let rotT = 0;
-map.on('rotate', () => { syncCompass(); current.bearing = map.getBearing(); clearTimeout(rotT); rotT = setTimeout(persist, 400); });
+map.on('rotate', () => { syncCompass(); rotateGateIcons(); current.bearing = map.getBearing(); clearTimeout(rotT); rotT = setTimeout(persist, 400); });
 
 const fig = L.layerGroup().addTo(map);
 const grads = L.layerGroup().addTo(map);
@@ -126,7 +126,7 @@ let markerA = null, markerB = null, placing = null, posMarker = null; // placing
 function dotIcon(color, size, label, cls) {
   return L.divIcon({
     className: 'dot ' + (cls || ''),
-    html: `<span style="background:${color};width:${size}px;height:${size}px"></span>${label ? `<b style="color:${color}">${label}</b>` : ''}`,
+    html: `<span style="background:${color};width:${size}px;height:${size}px"></span>${label ? `<b class="${isDark(color) ? 'onlight' : ''}" style="color:${color}">${label}</b>` : ''}`,
     iconSize: [size, size], iconAnchor: [size / 2, size / 2]
   });
 }
@@ -167,13 +167,16 @@ function draw() {
     const other = c.key === 'A' ? current.gateB : current.gateA;
     const len = Math.min(25, corridorLength() * 0.3);
     const tip = Geo.fromLocal(c.gate, { x: c.geo.f.x * len, y: c.geo.f.y * len });
-    L.polyline(arrowAt(c.gate, tip, 1, Math.max(len * 0.3, 4)), { color: col.setup, weight: 3, interactive: false }).addTo(fig);
+    L.polyline(arrowAt(c.gate, tip, 1, Math.max(len * 0.3, 4)), { color: GATE_COLOR, weight: 3, interactive: false }).addTo(fig);
     void other;
 
     // Branche d'approche
     if ((+p.legLen || 0) > 0) {
+      L.polyline([LL(c.legStart), LL(c.setup)], { color: '#fff', weight: 6, opacity: .75, interactive: false }).addTo(fig);
       L.polyline([LL(c.legStart), LL(c.setup)], { color: col.leg, weight: 3, interactive: false }).addTo(fig);
-      L.polyline(arrowAt(c.legStart, c.setup, 0.55, Math.min(10, (+p.legLen || 0) * 0.08 + 3)), { color: col.leg, weight: 3, interactive: false }).addTo(fig);
+      const chev = arrowAt(c.legStart, c.setup, 0.55, Math.min(10, (+p.legLen || 0) * 0.08 + 3));
+      L.polyline(chev, { color: '#fff', weight: 6, opacity: .75, interactive: false }).addTo(fig);
+      L.polyline(chev, { color: col.leg, weight: 3, interactive: false }).addTo(fig);
       L.marker(LL(c.legStart), { icon: dotIcon(col.leg, 10, showLabels() ? `${legLine1(c)}<br><small>${legLine2(c)}</small>` : ''), interactive: false }).addTo(fig);
     }
     if (showRec()) L.polyline([LL(c.setup), LL(c.rec)], { color: '#fff', weight: 1, opacity: .45, dashArray: '2 6', interactive: false }).addTo(fig);
@@ -217,9 +220,33 @@ function drawWindCircle(center, radius, color) {
 }
 
 const isDragging = m => !!(m && m.dragging && m.dragging._draggable && m.dragging._draggable._moving);
+// Icône des portes : petit segment perpendiculaire à l'axe de poser, avec un drapeau debout à chaque bout
+// (drapeaux toujours droits à l'écran, le segment suit l'orientation de l'axe et de la carte).
+function gateSvg(theta) { // theta : angle à l'écran du sens du poser (0 = haut, sens horaire)
+  const t = theta * Math.PI / 180, px = Math.cos(t), py = Math.sin(t), W2 = 15;
+  const ends = [-1, 1].map(sd => [sd * px * W2, sd * py * W2]);
+  const flag = ([x, y]) => `<line x1="${x}" y1="${y}" x2="${x}" y2="${y - 18}" stroke="#111" stroke-width="2"/>
+    <polygon points="${x},${y - 18} ${x + 11},${y - 14} ${x},${y - 10}" fill="${GATE_COLOR}" stroke="#111" stroke-width="1.2"/>`;
+  return `<line x1="${ends[0][0]}" y1="${ends[0][1]}" x2="${ends[1][0]}" y2="${ends[1][1]}" stroke="#000" stroke-width="6" stroke-linecap="round" opacity=".5"/>
+    <line x1="${ends[0][0]}" y1="${ends[0][1]}" x2="${ends[1][0]}" y2="${ends[1][1]}" stroke="${GATE_COLOR}" stroke-width="3.5" stroke-linecap="round"/>
+    ${ends.map(flag).join('')}
+    ${ends.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.5" fill="#fff" stroke="#111"/>`).join('')}`;
+}
+function gateIcon(label) {
+  return L.divIcon({ className: 'gate', iconSize: [60, 60], iconAnchor: [30, 30],
+    html: `<svg class="gsvg" width="60" height="60" viewBox="-30 -30 60 60"></svg>${label ? `<b style="color:${GATE_COLOR}">${label}</b>` : ''}` });
+}
+function rotateGateIcons() {
+  const b = map.getBearing ? map.getBearing() : 0;
+  [['A', markerA], ['B', markerB]].forEach(([k, m]) => {
+    const el = m && m.getElement && m.getElement(); if (!el) return;
+    const svg = el.querySelector('.gsvg'); if (!svg) return;
+    svg.innerHTML = gateSvg((hasGates() ? headingOf(k) : 0) + b);
+  });
+}
 function gateLabel(key) { return showLabels() && hasGates() ? `Portes ${hdg(headingOf(key))}` : ''; }
 function makeGateMarker(key) {
-  const m = L.marker(LL(current['gate' + key]), { draggable: true, icon: dotIcon(GATE_COLOR, 18, gateLabel(key), 'big'), zIndexOffset: 1000 }).addTo(map);
+  const m = L.marker(LL(current['gate' + key]), { draggable: true, icon: gateIcon(gateLabel(key)), zIndexOffset: 1000 }).addTo(map);
   m._psvLabel = gateLabel(key);
   m.on('drag', e => { current['gate' + key] = { lat: e.latlng.lat, lng: e.latlng.lng }; drawLight(); });
   m.on('dragend', () => { persist(); redraw(); });
@@ -229,11 +256,12 @@ function syncGate(m, key) {
   if (isDragging(markerA) || isDragging(markerB)) return; // ne jamais toucher une porte pendant un glissement
   m.setLatLng(LL(current['gate' + key]));
   const lab = gateLabel(key);
-  if (m._psvLabel !== lab) { m.setIcon(dotIcon(GATE_COLOR, 18, lab, 'big')); m._psvLabel = lab; }
+  if (m._psvLabel !== lab) { m.setIcon(gateIcon(lab)); m._psvLabel = lab; }
 }
 function placeGateMarkers() {
   if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else syncGate(markerA, 'A'); }
   if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
+  rotateGateIcons();
 }
 function resetGateMarkers() {
   [markerA, markerB].forEach(m => m && map.removeLayer(m));
@@ -608,18 +636,38 @@ async function renderPdfCanvas() {
     if (align === 'center') x = Math.min(Math.max(x, m + w / 2), W - m - w / 2);
     y = Math.min(Math.max(y, 20 * u), H - band - 14 * u);   // jamais sous le bandeau
     g.textAlign = align;
-    g.lineWidth = size * u * 0.28; g.strokeStyle = 'rgba(0,0,0,.85)'; g.lineJoin = 'round'; g.strokeText(txt, x, y); g.fillStyle = color; g.fillText(txt, x, y); g.restore();
+    g.lineWidth = size * u * 0.28; g.strokeStyle = isDark(color) ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.85)'; g.lineJoin = 'round'; g.strokeText(txt, x, y); g.fillStyle = color; g.fillText(txt, x, y); g.restore();
   };
   const dot = (ll, color, r, label) => {
     const c = toC(ll); g.save(); g.beginPath(); g.arc(c.x, c.y, r * u, 0, 2 * Math.PI); g.fillStyle = color; g.fill();
     g.lineWidth = 1.2 * u; g.strokeStyle = '#111'; g.stroke(); g.restore();
     if (label && showLabels()) shadowText(label, c.x + (r + 4) * u, c.y, color, 13);
   };
-  const chevron = (from, to, frac, color) => {
+  const chevron = (from, to, frac, color) => chevronW(from, to, frac, color, 3);
+  const chevronW = (from, to, frac, color, w) => {
     const A = toC(from), B = toC(to), dx = B.x - A.x, dy = B.y - A.y, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n;
     const mx = A.x + dx * frac, my = A.y + dy * frac, L0 = 12 * u;
-    g.save(); g.strokeStyle = color; g.lineWidth = 3 * u; g.beginPath();
+    g.save(); g.strokeStyle = color; g.lineWidth = w * u; g.beginPath();
     g.moveTo(mx - ux * L0 - uy * L0 * 0.6, my - uy * L0 + ux * L0 * 0.6); g.lineTo(mx, my); g.lineTo(mx - ux * L0 + uy * L0 * 0.6, my - uy * L0 - ux * L0 * 0.6); g.stroke(); g.restore();
+  };
+  const chevronHalo = (from, to, frac) => { g.save(); g.globalAlpha = .85; chevronW(from, to, frac, '#ffffff', 6); g.restore(); };
+  // Portes : segment perpendiculaire à l'axe + un drapeau à chaque bout (comme sur la carte)
+  const gateMark = (key, label) => {
+    const gl = current['gate' + key], h = headingOf(key) * Math.PI / 180;
+    const P = toC(gl), Q = toC(Geo.fromLocal(gl, { x: 10 * Math.sin(h), y: 10 * Math.cos(h) }));
+    const dl = Math.hypot(Q.x - P.x, Q.y - P.y) || 1, dx = (Q.x - P.x) / dl, dy = (Q.y - P.y) / dl; // sens du poser sur la page
+    const px = -dy, py = dx, W2 = 15 * u;
+    g.save(); g.lineCap = 'round';
+    g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = 6 * u; g.beginPath(); g.moveTo(P.x - px * W2, P.y - py * W2); g.lineTo(P.x + px * W2, P.y + py * W2); g.stroke();
+    g.strokeStyle = GATE_COLOR; g.lineWidth = 3.5 * u; g.stroke();
+    [-1, 1].forEach(sd => {
+      const ex = P.x + sd * px * W2, ey = P.y + sd * py * W2; // drapeau debout (vers le haut de la page)
+      g.strokeStyle = '#111'; g.lineWidth = 2 * u; g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex, ey - 18 * u); g.stroke();
+      g.fillStyle = GATE_COLOR; g.lineWidth = 1.2 * u; g.beginPath(); g.moveTo(ex, ey - 18 * u); g.lineTo(ex + 11 * u, ey - 14 * u); g.lineTo(ex, ey - 10 * u); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(ex, ey, 2.5 * u, 0, 2 * Math.PI); g.fill(); g.stroke();
+    });
+    g.restore();
+    if (showLabels()) shadowText(label, P.x + 24 * u, P.y, GATE_COLOR, 13);
   };
   const circle = (center, radius, color) => {
     if (!(radius > 0)) return;
@@ -652,9 +700,10 @@ async function renderPdfCanvas() {
     const col = c.colors, p = current.params;
     if (showRec()) line(c.behind, c.gate, AXIS_COLOR, 2, [9, 7]);
     const len = Math.min(25, corridorLength() * 0.3);
-    chevron(c.gate, Geo.fromLocal(c.gate, { x: c.geo.f.x * len, y: c.geo.f.y * len }), 1, col.setup);
+    chevron(c.gate, Geo.fromLocal(c.gate, { x: c.geo.f.x * len, y: c.geo.f.y * len }), 1, GATE_COLOR);
     if ((+p.legLen || 0) > 0) {
-      line(c.legStart, c.setup, col.leg, 3.2); chevron(c.legStart, c.setup, 0.55, col.leg);
+      line(c.legStart, c.setup, '#ffffff', 6); line(c.legStart, c.setup, col.leg, 3.2);
+      chevronHalo(c.legStart, c.setup, 0.55); chevron(c.legStart, c.setup, 0.55, col.leg);
       const S = toC(c.legStart);
       dot(c.legStart, col.leg, 6);
       // Libellé de branche jamais posé sur la branche :
@@ -675,8 +724,8 @@ async function renderPdfCanvas() {
     dot(c.setup, col.setup, 8, `Setup ${cfgName(c)}`);
     if (showRec()) dot(c.rec, col.rec, 6.5, `Recouvr. ${cfgName(c)}`);
   });
-  dot(current.gateA, GATE_COLOR, 9, `Portes ${hdg(headingOf('A'))}`);
-  dot(current.gateB, GATE_COLOR, 9, `Portes ${hdg(headingOf('B'))}`);
+  gateMark('A', `Portes ${hdg(headingOf('A'))}`);
+  gateMark('B', `Portes ${hdg(headingOf('B'))}`);
 
   // ---- Flèche du nord (haut droite) ----
   const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)

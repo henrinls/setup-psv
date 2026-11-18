@@ -50,7 +50,7 @@ button:disabled{opacity:.6}
 #quick{position:fixed;left:8px;top:calc(88px + env(safe-area-inset-top));max-height:calc(100% - 140px - env(safe-area-inset-top));display:flex;flex-direction:column;flex-wrap:wrap;align-content:flex-start;gap:7px;z-index:950}
 #quick button{min-width:54px;height:38px;padding:0 7px;border-radius:11px;background:rgba(20,20,20,.82);border:2px solid #555;font-weight:700;font-size:13px;color:#ccc}
 #quick button.on{color:#fff;border-color:#ddd;background:rgba(40,40,40,.9)}
-#quick .qa{border-color:#ff7a1a}#quick .qb{border-color:#a3e635}
+#quick .qa,#quick .qb{border-color:#ff2020}
 #quick #qTurnA,#quick #qTurnB{color:#fff}
 #quick #qShowA:not(.on),#quick #qShowB:not(.on),#quick #qTicks:not(.on),#quick #qRings:not(.on){opacity:.55;text-decoration:line-through}
 #btnNorth #compassNeedle{display:inline-flex;flex-direction:column;align-items:center;line-height:.8;font-size:15px;color:#ff5a4a;transition:transform .1s}
@@ -61,4 +61,7 @@ button:disabled{opacity:.6}
 @media (orientation:landscape){#legend{left:auto;right:64px;bottom:calc(10px + env(safe-area-inset-bottom))}}
 #btnAxisUp .axisIco{display:inline-flex;flex-direction:column;align-items:center;line-height:.85;font-size:17px;color:#e879f9;font-weight:700}
 #btnAxisUp .axisIco small{font-size:8px;color:#fff}
-#quick #qRec{border-color:#22d3ee}
+#quick #qRec{border-color:#ffd400}
+.dot b.onlight{text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff,0 0 1px #fff}
+.gate{overflow:visible}.gate .gsvg{position:absolute;left:0;top:0;overflow:visible}
+.gate b{position:absolute;left:52px;top:50%;transform:translateY(-50%);white-space:nowrap;font-size:12px;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
