@@ -81,3 +81,5 @@ button.danger{border-color:#a33;color:#ff8a8a}
 .corrmid span{display:block;width:18px;height:18px;margin:8px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid #fff;box-shadow:0 0 0 1.5px #000}
 .corrmid{-webkit-touch-callout:none;user-select:none}.corrmid.lifting span{transform:scale(1.5)}
 #top .leftcol{display:flex;flex-direction:column;align-items:flex-start;gap:7px;pointer-events:none}#top .leftcol>*{pointer-events:auto}
+#zoneList .zhandle{touch-action:none;cursor:grab;font-size:22px;color:#888;padding:6px 10px 6px 2px;user-select:none;-webkit-user-select:none}
+#zoneList li.zdrag{position:relative;z-index:5;background:#2a2a2a;box-shadow:0 4px 14px rgba(0,0,0,.6)}

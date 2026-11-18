@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.3.1';
+const VERSION = '3.4.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -628,8 +628,8 @@ function renderZones() {
   if (!zones.length) ul.innerHTML = '<li class="mut">Aucune zone enregistrée.</li>';
   zones.forEach(z => {
     const li = document.createElement('li');
-    li.className = z.id === current.id ? 'cur' : '';
-    li.innerHTML = `<span class="zn">${esc(z.name)}${z.offline ? ' <small>· hors-ligne</small>' : ''}</span>`;
+    li.className = z.id === current.id ? 'cur' : ''; li.dataset.id = z.id;
+    li.innerHTML = `<span class="zhandle" title="Glisser pour réordonner">≡</span><span class="zn">${esc(z.name)}${z.offline ? ' <small>· hors-ligne</small>' : ''}</span>`;
     const open = document.createElement('button'); open.textContent = 'Ouvrir'; open.onclick = () => loadZone(z.id);
     const ren = document.createElement('button'); ren.textContent = '✎'; ren.onclick = async () => {
       const n = await ask('Nouveau nom :', z.name); if (!n) return;
@@ -642,8 +642,40 @@ function renderZones() {
       renderZones();
     };
     li.append(open, ren, del); ul.append(li);
+    zoneReorder(li, li.querySelector('.zhandle'));
   });
   $('offlineStatus').textContent = current.offline ? `Photo enregistrée hors-ligne le ${current.offline}.` : '';
+}
+// Réordonner les zones : on tient la poignée ≡ et on glisse la ligne vers le haut ou le bas
+function zoneReorder(li, handle) {
+  let y0 = 0, dy = 0, active = false;
+  handle.addEventListener('pointerdown', e => {
+    e.preventDefault(); active = true; y0 = e.clientY; dy = 0;
+    try { handle.setPointerCapture(e.pointerId); } catch (er) {}
+    li.classList.add('zdrag');
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!active) return;
+    dy = e.clientY - y0; li.style.transform = `translateY(${dy}px)`;
+    const ul = li.parentNode, rows = [...ul.children].filter(x => x !== li && x.dataset.id);
+    const yMid = li.getBoundingClientRect().top + li.offsetHeight / 2;
+    const before = rows.find(r => { const b = r.getBoundingClientRect(); return yMid < b.top + b.height / 2; });
+    const nextSib = before || null;
+    if (li.nextSibling !== nextSib) { // la ligne change de place : on recale le point de départ pour qu'elle reste sous le doigt
+      const top0 = li.getBoundingClientRect().top - dy;
+      ul.insertBefore(li, nextSib);
+      li.style.transform = ''; const top1 = li.getBoundingClientRect().top;
+      y0 += top1 - top0; dy = e.clientY - y0; li.style.transform = `translateY(${dy}px)`;
+    }
+  });
+  const end = () => {
+    if (!active) return; active = false;
+    li.classList.remove('zdrag'); li.style.transform = '';
+    const order = [...li.parentNode.children].map(x => x.dataset.id).filter(Boolean);
+    zones.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    store.set('psv.zones', zones);
+  };
+  handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
 }
 function loadZone(id) {
   const z = zones.find(x => x.id === id); if (!z) return;
