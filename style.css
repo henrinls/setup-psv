@@ -22,7 +22,8 @@ h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#9ab;margi
 label{font-size:12px;color:#aaa;display:block;margin-bottom:3px}
 .row{margin:6px 0}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}.seg button{padding:8px 4px}
+.seg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .stepper{display:flex;gap:5px}.stepper input{text-align:center}.stepper button{padding:8px 9px}
 .wide{width:100%}
 .hint{font-size:12px;color:#8a8a8a;margin:4px 0}
@@ -34,8 +35,8 @@ ul{list-style:none;padding:0;margin:0}
 .search{display:flex;gap:6px}
 #searchResults .res{width:100%;text-align:left;margin:3px 0;background:#202020;font-size:13px}
 #ioText{min-height:90px;margin-top:6px}
-#dialog{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
-#dialog .box{background:#1d1d1d;border-radius:14px;padding:16px;width:100%;max-width:380px}
+#dialog,#pdfReady{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
+#dialog .box,#pdfReady .box{background:#1d1d1d;border-radius:14px;padding:16px;width:100%;max-width:380px}
 #dialog input{margin:8px 0 12px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(110px + env(safe-area-inset-bottom));background:#333;color:#fff;padding:9px 14px;border-radius:10px;z-index:2100;max-width:90vw;text-align:center;font-size:14px}
 .dot span{display:block;border-radius:50%;border:2px solid #111;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
@@ -45,3 +46,4 @@ ul{list-style:none;padding:0;margin:0}
 .glabel span{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;font-weight:700;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
 .leaflet-control-attribution{font-size:9px}
 .leaflet-bottom.leaflet-left .leaflet-control-scale{margin-bottom:calc(6px + env(safe-area-inset-bottom))}
+button:disabled{opacity:.6}

@@ -38,24 +38,33 @@
   </div>
 
   <div id="tab-reglages" class="tab">
-    <h3>Portes et axe de poser</h3>
+    <h3>Couloir et portes</h3>
+    <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer les portes : touche A puis B sur la carte</button></div>
+    <p class="hint" id="axisInfo"></p>
     <div class="row">
-      <label>Axe de poser (°, sens du poser)</label>
+      <label>Affiner l'axe (tourne la porte B autour de la porte A)</label>
       <div class="stepper">
-        <button data-step="heading" data-d="-5">−5</button>
-        <button data-step="heading" data-d="-1">−1</button>
-        <input id="p_heading" inputmode="decimal">
-        <button data-step="heading" data-d="1">+1</button>
-        <button data-step="heading" data-d="5">+5</button>
+        <button data-rot="-5">−5°</button>
+        <button data-rot="-1">−1°</button>
+        <button data-rot="1">+1°</button>
+        <button data-rot="5">+5°</button>
       </div>
     </div>
-    <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer / déplacer les portes (toucher la carte)</button></div>
 
-    <h3>Virage</h3>
-    <div class="row seg" id="turnSeg">
-      <button data-turn="G">↺ Virage à gauche</button>
-      <button data-turn="D">↻ Virage à droite</button>
+    <h3>Configurations affichées</h3>
+    <div class="row seg3" id="showSeg">
+      <button data-show="A">Porte A</button>
+      <button data-show="AB">Les deux</button>
+      <button data-show="B">Porte B</button>
     </div>
+    <div class="grid2">
+      <div><label>Virage depuis la porte A</label>
+        <div class="seg" id="turnA"><button data-turn="G">↺ Gauche</button><button data-turn="D">↻ Droite</button></div></div>
+      <div><label>Virage depuis la porte B</label>
+        <div class="seg" id="turnB"><button data-turn="G">↺ Gauche</button><button data-turn="D">↻ Droite</button></div></div>
+    </div>
+
+    <h3>Temps du virage</h3>
     <div class="grid2">
       <div><label>Abattée + rotation (s)</label><input id="p_t1" inputmode="decimal"></div>
       <div><label>Recouvrement (s)</label><input id="p_t2" inputmode="decimal"></div>
@@ -66,7 +75,7 @@
       <div><label>Déport arrière (m)</label><input id="p_setupBack" inputmode="decimal"></div>
       <div><label>Déport latéral (m)</label><input id="p_setupSide" inputmode="decimal"></div>
     </div>
-    <p class="hint">Le déport latéral se met du côté du virage (gauche si virage à gauche). Valeur négative = côté opposé.</p>
+    <p class="hint">Le déport latéral se met du côté du virage. Valeur négative = côté opposé.</p>
 
     <h3>Point de recouvrement</h3>
     <div class="grid2">
@@ -80,12 +89,15 @@
       <div><label>Durée sur la branche (s)</label><input id="p_legTime" inputmode="decimal"></div>
       <div><label>Hauteur au début (m)</label><input id="p_legHeight" inputmode="decimal"></div>
     </div>
-    <p class="hint">Branche perpendiculaire à l'axe de poser, venant de l'extérieur et dirigée vers l'axe, qui finit au point de setup.</p>
+    <p class="hint">Perpendiculaire à l'axe, venant de l'extérieur et dirigée vers l'axe ; elle finit au point de setup.</p>
 
     <h3>Affichage</h3>
     <label class="check"><input type="checkbox" id="p_ticks"> Graduations en degrés sur les cercles</label>
     <label class="check"><input type="checkbox" id="p_rings"> Anneaux intermédiaires (1 m/s)</label>
-    <label class="check"><input type="checkbox" id="p_corridor"> Prolonger l'axe devant les portes</label>
+
+    <h3>Export</h3>
+    <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4, nord en haut)</button></div>
+    <p class="hint">Le PDF reprend ce qui est affiché (configurations, graduations, anneaux) et tous tes réglages.</p>
   </div>
 
   <div id="tab-zones" class="tab hidden">
@@ -94,7 +106,7 @@
       <button id="btnSaveZone" class="wide">💾 Enregistrer sous…</button>
       <button id="btnNewZone" class="wide">＋ Nouvelle zone ici</button>
     </div>
-    <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour des portes)</button></div>
+    <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour du couloir)</button></div>
     <div id="offlineStatus" class="hint"></div>
 
     <h3>Mes zones</h3>
@@ -123,6 +135,13 @@
     <p id="dlgText"></p>
     <input id="dlgInput">
     <div class="grid2"><button id="dlgCancel">Annuler</button><button id="dlgOk" class="primary">OK</button></div>
+  </div>
+</div>
+
+<div id="pdfReady" class="hidden">
+  <div class="box">
+    <p>PDF prêt : <b id="pdfName"></b></p>
+    <div class="grid2"><button id="pdfClose">Fermer</button><button id="pdfShare" class="primary">Partager / Enregistrer</button></div>
   </div>
 </div>
 

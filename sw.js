@@ -1,8 +1,8 @@
 // Service worker : appli disponible hors-ligne + images satellite en cache.
-const APP_CACHE = 'psv-app-v1.1.0';
-const TILE_CACHE = 'psv-tiles-v1';
+const APP_CACHE = 'psv-app-v2.0.0';
+const TILE_CACHE = 'psv-tiles-v2';
 const APP_FILES = ['./', 'index.html', 'style.css', 'geo.js', 'app.js', 'manifest.webmanifest',
-  'icon-192.png', 'icon-512.png', 'vendor/leaflet.js', 'vendor/leaflet.css',
+  'icon-192.png', 'icon-512.png', 'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/jspdf.umd.min.js',
   'vendor/images/marker-icon.png', 'vendor/images/marker-icon-2x.png', 'vendor/images/marker-shadow.png',
   'vendor/images/layers.png', 'vendor/images/layers-2x.png'];
 
@@ -11,7 +11,7 @@ self.addEventListener('install', e => {
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(
-    keys.filter(k => k.startsWith('psv-app-') && k !== APP_CACHE).map(k => caches.delete(k))
+    keys.filter(k => (k.startsWith('psv-app-') && k !== APP_CACHE) || k === 'psv-tiles-v1').map(k => caches.delete(k))
   )).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {

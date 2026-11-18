@@ -1,29 +1,50 @@
 'use strict';
-const VERSION = '1.1.0';
+const VERSION = '2.0.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const TILE_CACHE = 'psv-tiles-v1';
+const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
-  heading: 0, turn: 'G', t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
-  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, corridor: true
+  t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
+  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true
 };
-const COLORS = { gates: '#ffd400', axis: '#ffffff', setup: '#ff7a1a', rec: '#22d3ee', leg: '#e879f9', ring: '#ff7a1a' };
+const PALETTE = {
+  A: { setup: '#ff7a1a', rec: '#22d3ee', leg: '#e879f9' },
+  B: { setup: '#a3e635', rec: '#60a5fa', leg: '#fb7185' }
+};
+const GATE_COLOR = '#ffd400', AXIS_COLOR = '#ffffff';
 
 // ---------- Stockage ----------
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('Enregistrement impossible sur cet appareil'); } }
 };
-let zones = store.get('psv.zones', []);
-let current = store.get('psv.current', null); // {id|null, name, center, zoom, gates, params}
-if (!current) current = newZone(null);
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// Passage du format v1 (une porte + cap) au format v2 (portes A et B)
+function upgrade(z) {
+  if (!z) return z;
+  z.params = Object.assign({}, DEFAULT_PARAMS, z.params || {});
+  if (z.gates && !z.gateA) {
+    const h = +z.params.heading || 0, rad = h * Math.PI / 180;
+    z.gateA = z.gates;
+    z.gateB = Geo.fromLocal(z.gates, { x: 100 * Math.sin(rad), y: 100 * Math.cos(rad) });
+    z.turnA = z.params.turn || 'G';
+    z.turnB = z.params.turn || 'G';
+  }
+  delete z.gates; delete z.params.heading; delete z.params.turn; delete z.params.corridor;
+  z.turnA = z.turnA || 'G'; z.turnB = z.turnB || 'G'; z.show = z.show || 'AB';
+  return z;
+}
+let zones = store.get('psv.zones', []).map(upgrade);
+let current = upgrade(store.get('psv.current', null)) || newZone(null);
+store.set('psv.zones', zones);
 
 function newZone(center) {
-  return {
+  return upgrade({
     id: null, name: 'Nouvelle zone',
     center: center || { lat: 46.6, lng: 2.4 }, zoom: center ? 17 : 6,
-    gates: null,
+    gateA: null, gateB: null, turnA: 'G', turnB: 'G', show: 'AB',
     params: Object.assign({}, DEFAULT_PARAMS, store.get('psv.lastParams', {}))
-  };
+  });
 }
 function persist() {
   current.center = map.getCenter(); current.zoom = map.getZoom();
@@ -31,15 +52,50 @@ function persist() {
   store.set('psv.lastParams', current.params);
   if (current.id) {
     const i = zones.findIndex(z => z.id === current.id);
-    if (i >= 0) { zones[i] = JSON.parse(JSON.stringify(current)); store.set('psv.zones', zones); }
+    if (i >= 0) { zones[i] = clone(current); store.set('psv.zones', zones); }
   }
 }
 
+// ---------- Figure (calcul pur, réutilisé par la carte et le PDF) ----------
+function hasGates() { return !!(current.gateA && current.gateB); }
+function axisHeading() { return Geo.bearingOf(Geo.toLocal(current.gateA, current.gateB)); }
+function corridorLength() { const v = Geo.toLocal(current.gateA, current.gateB); return Math.hypot(v.x, v.y); }
+
+// Une configuration = une porte (origine), le cap du poser depuis cette porte, le sens du virage.
+function configs() {
+  if (!hasGates()) return [];
+  const hA = axisHeading(), hB = (hA + 180) % 360, out = [];
+  if (current.show !== 'B') out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
+  if (current.show !== 'A') out.push({ key: 'B', gate: current.gateB, heading: hB, turn: current.turnB });
+  return out.map(c => {
+    const g = Geo.compute(Object.assign({}, current.params, { heading: c.heading, turn: c.turn }));
+    const ll = v => Geo.fromLocal(c.gate, v);
+    return Object.assign(c, {
+      geo: g, colors: PALETTE[c.key],
+      setup: ll(g.setup), rec: ll(g.rec), legStart: ll(g.legStart),
+      behind: ll({ x: -g.f.x * Math.max(+current.params.recBack || 0, 15), y: -g.f.y * Math.max(+current.params.recBack || 0, 15) })
+    });
+  });
+}
+// Toutes les positions à faire tenir dans un cadrage (en lat/lng)
+function figurePoints() {
+  const pts = [];
+  if (current.gateA) pts.push(current.gateA);
+  if (current.gateB) pts.push(current.gateB);
+  configs().forEach(c => {
+    pts.push(c.rec, c.legStart, c.behind);
+    const r = c.geo.rSetup || 0;
+    [[r, 0], [-r, 0], [0, r], [0, -r]].forEach(([x, y]) => pts.push(Geo.fromLocal(c.setup, { x, y })));
+    pts.push(c.setup);
+  });
+  return pts;
+}
+
 // ---------- Carte ----------
-const map = L.map('map', { zoomControl: false, maxZoom: 22, attributionControl: true, tap: true })
+const map = L.map('map', { zoomControl: false, maxZoom: 22, zoomSnap: 0.25, attributionControl: true })
   .setView([current.center.lat, current.center.lng], current.zoom);
 L.tileLayer(TILE_URL, {
-  maxNativeZoom: 19, maxZoom: 22,
+  maxNativeZoom: 19, maxZoom: 22, crossOrigin: 'anonymous',
   attribution: 'Imagerie © Esri, Maxar, Earthstar Geographics'
 }).addTo(map);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -48,7 +104,7 @@ map.on('moveend', () => { current.center = map.getCenter(); current.zoom = map.g
 
 const fig = L.layerGroup().addTo(map);
 const grads = L.layerGroup().addTo(map);
-let gatesMarker = null, axisHandle = null, placing = false, posMarker = null;
+let markerA = null, markerB = null, placing = null, posMarker = null; // placing : null | 'A' | 'B'
 
 function dotIcon(color, size, label, cls) {
   return L.divIcon({
@@ -57,190 +113,191 @@ function dotIcon(color, size, label, cls) {
     iconSize: [size, size], iconAnchor: [size / 2, size / 2]
   });
 }
+const LL = p => [p.lat, p.lng];
 
-// ---------- Dessin ----------
 let raf = 0;
 function redraw() { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); }
+let lightT = 0;
+function drawLight() { const n = performance.now(); if (n - lightT > 60) { lightT = n; draw(); } }
+
+function arrowAt(from, to, frac, size) {
+  // petite flèche (chevron) au point frac du segment from→to, en coordonnées locales de from
+  const v = Geo.toLocal(from, to), n = Math.hypot(v.x, v.y) || 1, u = { x: v.x / n, y: v.y / n }, w = { x: -u.y, y: u.x };
+  const m = { x: v.x * frac, y: v.y * frac };
+  const a = s => Geo.fromLocal(from, { x: m.x - u.x * size + s * w.x * size * 0.6, y: m.y - u.y * size + s * w.y * size * 0.6 });
+  return [LL(a(-1)), LL(Geo.fromLocal(from, m)), LL(a(1))];
+}
 
 function draw() {
   fig.clearLayers(); grads.clearLayers();
-  const p = current.params, g = current.gates;
-  updateLegend();
-  if (!g) { setBanner('Touche la carte pour placer les portes.'); placing = true; syncPlaceBtn(); return; }
-  if (!placing) setBanner(null);
-  const c = Geo.compute(p);
-  const ll = v => { const q = Geo.fromLocal(g, v); return [q.lat, q.lng]; };
-
-  // Axe de poser : du recouvrement (ou arrière) jusqu'à devant les portes
-  const backMost = Math.max(+p.recBack || 0, 20);
-  const front = p.corridor ? 120 : 25;
-  L.polyline([ll({ x: -c.f.x * backMost, y: -c.f.y * backMost }), ll({ x: c.f.x * front, y: c.f.y * front })],
-    { color: COLORS.axis, weight: 2, dashArray: '8 6', opacity: .9, interactive: false }).addTo(fig);
-  // Flèche du sens du poser
-  const tip = { x: c.f.x * 30, y: c.f.y * 30 };
-  const wing = (s) => ({ x: tip.x - c.f.x * 8 + s * c.r.x * 5, y: tip.y - c.f.y * 8 + s * c.r.y * 5 });
-  L.polyline([ll(wing(-1)), ll(tip), ll(wing(1))], { color: COLORS.axis, weight: 3, interactive: false }).addTo(fig);
-
-  // Branche d'approche
-  if ((+p.legLen || 0) > 0) {
-    L.polyline([ll(c.legStart), ll(c.setup)], { color: COLORS.leg, weight: 3, interactive: false }).addTo(fig);
-    const mid = { x: (c.legStart.x + c.setup.x) / 2, y: (c.legStart.y + c.setup.y) / 2 };
-    const dir = { x: c.setup.x - c.legStart.x, y: c.setup.y - c.legStart.y };
-    const n = Math.hypot(dir.x, dir.y) || 1, u = { x: dir.x / n, y: dir.y / n }, w = { x: -u.y, y: u.x };
-    const a = (s) => ({ x: mid.x - u.x * 8 + s * w.x * 5, y: mid.y - u.y * 8 + s * w.y * 5 });
-    L.polyline([ll(a(-1)), ll(mid), ll(a(1))], { color: COLORS.leg, weight: 3, interactive: false }).addTo(fig);
-    const info = [];
-    if (+p.legHeight) info.push(`${p.legHeight} m`);
-    if (+p.legTime) info.push(`${p.legTime} s`);
-    L.marker(ll(c.legStart), { icon: dotIcon(COLORS.leg, 10, `Début branche${info.length ? ' · ' + info.join(' · ') : ''}<br><small>cap ${Math.round(c.legHeading)}°</small>`), interactive: false }).addTo(fig);
+  updateLegend(); updateAxisInfo();
+  if (!hasGates()) {
+    if (!placing) placing = current.gateA ? 'B' : 'A';
+    setBanner(`Touche la carte pour placer la porte ${placing}.`);
+    syncPlaceBtn();
+    if (current.gateA) placeGateMarkers();
+    return;
   }
+  if (!placing) setBanner(null);
+  const p = current.params;
 
-  // Lien setup → recouvrement (repère visuel)
-  L.polyline([ll(c.setup), ll(c.rec)], { color: '#fff', weight: 1, opacity: .45, dashArray: '2 6', interactive: false }).addTo(fig);
+  // Couloir A–B + prolongements derrière chaque porte jusqu'au recouvrement
+  L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
+  configs().forEach(c => {
+    const col = c.colors;
+    L.polyline([LL(c.behind), LL(c.gate)], { color: AXIS_COLOR, weight: 2, dashArray: '8 6', opacity: .9, interactive: false }).addTo(fig);
+    // Flèche du sens du poser depuis cette porte
+    const other = c.key === 'A' ? current.gateB : current.gateA;
+    const len = Math.min(25, corridorLength() * 0.3);
+    const tip = Geo.fromLocal(c.gate, { x: c.geo.f.x * len, y: c.geo.f.y * len });
+    L.polyline(arrowAt(c.gate, tip, 1, Math.max(len * 0.3, 4)), { color: col.setup, weight: 3, interactive: false }).addTo(fig);
+    void other;
 
-  // Cercles de vent
-  drawWindCircle(g, c.setup, c.rSetup, COLORS.setup, p.rings);
-  drawWindCircle(g, c.rec, c.rRec, COLORS.rec, p.rings);
+    // Branche d'approche
+    if ((+p.legLen || 0) > 0) {
+      L.polyline([LL(c.legStart), LL(c.setup)], { color: col.leg, weight: 3, interactive: false }).addTo(fig);
+      L.polyline(arrowAt(c.legStart, c.setup, 0.55, Math.min(10, (+p.legLen || 0) * 0.08 + 3)), { color: col.leg, weight: 3, interactive: false }).addTo(fig);
+      L.marker(LL(c.legStart), { icon: dotIcon(col.leg, 10, `${legLine1(c)}<br><small>${legLine2(c)}</small>`), interactive: false }).addTo(fig);
+    }
+    L.polyline([LL(c.setup), LL(c.rec)], { color: '#fff', weight: 1, opacity: .45, dashArray: '2 6', interactive: false }).addTo(fig);
 
-  L.marker(ll(c.setup), { icon: dotIcon(COLORS.setup, 14, 'Setup'), interactive: false }).addTo(fig);
-  L.marker(ll(c.rec), { icon: dotIcon(COLORS.rec, 11, 'Recouvrement'), interactive: false }).addTo(fig);
-
+    drawWindCircle(c.setup, c.geo.rSetup, col.setup);
+    drawWindCircle(c.rec, c.geo.rRec, col.rec);
+    L.marker(LL(c.setup), { icon: dotIcon(col.setup, 14, `Setup ${c.key}`), interactive: false }).addTo(fig);
+    L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, `Recouvr. ${c.key}`), interactive: false }).addTo(fig);
+  });
   placeGateMarkers();
 }
 
-function drawWindCircle(g, centerLocal, radius, color, rings) {
+function legLine1(c) { const p = current.params; return `Branche ${c.key} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
+function legLine2(c) { const p = current.params; return `cap ${Math.round(c.geo.legHeading)}°` + (+p.legHeight ? ` · début à ${p.legHeight} m` : ''); }
+
+function drawWindCircle(center, radius, color) {
   if (!(radius > 0)) return;
-  const center = Geo.fromLocal(g, centerLocal);
-  L.circle([center.lat, center.lng], { radius, color, weight: 2.5, fill: true, fillOpacity: .06, interactive: false }).addTo(fig);
-  if (rings) {
-    const v = +current.params.vref || 5;
-    for (let k = 1; k < v; k++) {
-      L.circle([center.lat, center.lng], { radius: radius * k / v, color, weight: 1, opacity: .55, fill: false, dashArray: '3 5', interactive: false }).addTo(fig);
-    }
+  const p = current.params;
+  L.circle(LL(center), { radius, color, weight: 2.5, fill: true, fillOpacity: .06, interactive: false }).addTo(fig);
+  if (p.rings) {
+    const v = +p.vref || 5;
+    for (let k = 1; k < v; k++)
+      L.circle(LL(center), { radius: radius * k / v, color, weight: 1, opacity: .55, fill: false, dashArray: '3 5', interactive: false }).addTo(fig);
   }
-  if (current.params.ticks === false) return; // version épurée : pas de graduation
-  // Graduations
-  const z = map.getZoom();
-  const mpp = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, z + 8);
-  const rPx = radius / mpp;
-  const st = Geo.tickSteps(rPx);
-  // repère Nord toujours présent
-  const pt = (deg, d) => { const a = deg * Math.PI / 180; const q = Geo.fromLocal(center, { x: d * Math.sin(a), y: d * Math.cos(a) }); return [q.lat, q.lng]; };
-  if (!st) {
-    L.polyline([pt(0, radius), pt(0, radius - 8 * mpp)], { color, weight: 2, interactive: false }).addTo(grads);
-    return;
-  }
+  if (p.ticks === false) return; // version épurée
+  const mpp = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
+  const st = Geo.tickSteps(radius / mpp);
+  const pt = (deg, d) => { const a = deg * Math.PI / 180; return LL(Geo.fromLocal(center, { x: d * Math.sin(a), y: d * Math.cos(a) })); };
+  if (!st) { L.polyline([pt(0, radius), pt(0, radius - 8 * mpp)], { color, weight: 2, interactive: false }).addTo(grads); return; }
   const segs = [];
-  const step = st.minor || st.label;
-  for (let deg = 0; deg < 360; deg += step) {
+  for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
     const major = deg % st.label === 0;
-    const len = (major ? 11 : 6) * mpp;
-    segs.push([pt(deg, radius), pt(deg, radius - len)]);
+    segs.push([pt(deg, radius), pt(deg, radius - (major ? 11 : 6) * mpp)]);
     if (major) {
       const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
-      L.marker(pt(deg, radius + 13 * mpp), {
-        interactive: false,
-        icon: L.divIcon({ className: 'glabel', html: `<span style="color:${color}">${deg}°${card}</span>`, iconSize: [0, 0] })
-      }).addTo(grads);
+      L.marker(pt(deg, radius + 13 * mpp), { interactive: false,
+        icon: L.divIcon({ className: 'glabel', html: `<span style="color:${color}">${deg}°${card}</span>`, iconSize: [0, 0] }) }).addTo(grads);
     }
   }
   L.polyline(segs, { color, weight: 1.5, interactive: false }).addTo(grads);
 }
 
-function placeGateMarkers() {
-  const g = current.gates, p = current.params;
-  const c = Geo.basis(p.heading);
-  const hl = Geo.fromLocal(g, { x: c.f.x * 60, y: c.f.y * 60 });
-  if (!gatesMarker) {
-    gatesMarker = L.marker([g.lat, g.lng], { draggable: true, icon: dotIcon(COLORS.gates, 18, 'Portes', 'big'), zIndexOffset: 1000 }).addTo(map);
-    gatesMarker.on('drag', e => { current.gates = { lat: e.latlng.lat, lng: e.latlng.lng }; drawLight(); });
-    gatesMarker.on('dragend', () => { persist(); redraw(); });
-    axisHandle = L.marker([hl.lat, hl.lng], { draggable: true, icon: dotIcon('#fff', 22, '', 'handle'), zIndexOffset: 1000 }).addTo(map);
-    axisHandle.on('drag', e => {
-      const v = Geo.toLocal(current.gates, e.latlng);
-      current.params.heading = Math.round(Geo.bearingOf(v));
-      fillInputs(['heading']); drawLight();
-    });
-    axisHandle.on('dragend', () => { persist(); redraw(); });
-  } else {
-    if (!isDragging(gatesMarker)) gatesMarker.setLatLng([g.lat, g.lng]);
-    if (!isDragging(axisHandle)) axisHandle.setLatLng([hl.lat, hl.lng]);
-  }
+const isDragging = m => !!(m && m.dragging && m.dragging._draggable && m.dragging._draggable._moving);
+function makeGateMarker(key) {
+  const m = L.marker(LL(current['gate' + key]), { draggable: true, icon: dotIcon(GATE_COLOR, 18, `Porte ${key}`, 'big'), zIndexOffset: 1000 }).addTo(map);
+  m.on('drag', e => { current['gate' + key] = { lat: e.latlng.lat, lng: e.latlng.lng }; drawLight(); });
+  m.on('dragend', () => { persist(); redraw(); });
+  return m;
 }
-const isDragging = m => !!(m.dragging && m.dragging._draggable && m.dragging._draggable._moving);
-let lightT = 0;
-function drawLight() { const n = performance.now(); if (n - lightT > 60) { lightT = n; draw(); } }
+function placeGateMarkers() {
+  if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else if (!isDragging(markerA)) markerA.setLatLng(LL(current.gateA)); }
+  if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else if (!isDragging(markerB)) markerB.setLatLng(LL(current.gateB)); }
+}
+function resetGateMarkers() {
+  [markerA, markerB].forEach(m => m && map.removeLayer(m));
+  markerA = markerB = null;
+}
 
 function fitFigure() {
-  if (!current.gates) return;
-  const c = Geo.compute(current.params), g = current.gates;
-  const pts = [c.gates, c.setup, c.rec, c.legStart];
-  const r = c.rSetup || 0;
-  pts.push({ x: c.setup.x + r, y: c.setup.y + r }, { x: c.setup.x - r, y: c.setup.y - r });
-  const b = L.latLngBounds(pts.map(v => { const q = Geo.fromLocal(g, v); return [q.lat, q.lng]; }));
-  map.fitBounds(b, { paddingTopLeft: [40, 80], paddingBottomRight: [150, 180], maxZoom: 19 });
+  const pts = figurePoints(); if (pts.length < 2) return;
+  map.fitBounds(L.latLngBounds(pts.map(LL)), { paddingTopLeft: [24, 80], paddingBottomRight: [24, 150], maxZoom: 19 });
 }
+
 function updateLegend() {
-  const p = current.params, c = Geo.compute(p), t = (+p.t1 || 0) + (+p.t2 || 0);
-  const r0 = n => Math.round(n);
-  document.getElementById('legend').innerHTML =
-    `<div><i style="background:${COLORS.setup}"></i>Cercle setup ${r0(c.rSetup)} m <small>(${p.vref} m/s × ${t} s)</small></div>` +
-    `<div><i style="background:${COLORS.rec}"></i>Cercle recouvrement ${r0(c.rRec)} m <small>(${p.vref} m/s × ${p.t2} s)</small></div>` +
-    `<div><i style="background:#fff"></i>Axe ${r0(p.heading)}° · virage ${p.turn === 'G' ? 'gauche' : 'droite'}</div>` +
-    `<div class="mut">Déport face au vent : 1 m/s = ${r0(t)} m (setup) · ${r0(+p.t2 || 0)} m (recouvr.)</div>`;
+  const p = current.params, t = (+p.t1 || 0) + (+p.t2 || 0), r0 = Math.round;
+  let h = '';
+  configs().forEach(c => {
+    h += `<div><i style="background:${c.colors.setup}"></i>${c.key} : poser ${r0(c.heading)}° · virage ${c.turn === 'G' ? 'gauche' : 'droite'}</div>`;
+  });
+  h += `<div class="mut">Cercles 5 m/s : setup ${r0((+p.vref || 0) * t)} m · recouvr. ${r0((+p.vref || 0) * (+p.t2 || 0))} m</div>`;
+  h += `<div class="mut">1 m/s = ${r0(t)} m (setup) · ${r0(+p.t2 || 0)} m (recouvr.)</div>`;
+  $('legend').innerHTML = h;
+}
+function updateAxisInfo() {
+  $('axisInfo').textContent = hasGates()
+    ? `Axe A→B : ${Math.round(axisHeading())}° · B→A : ${Math.round((axisHeading() + 180) % 360)}° · couloir ${Math.round(corridorLength())} m`
+    : 'Portes pas encore placées.';
 }
 
 // ---------- Interface ----------
-const $ = id => document.getElementById(id);
+function $(id) { return document.getElementById(id); }
 function setBanner(t) { const b = $('banner'); if (!t) b.classList.add('hidden'); else { b.textContent = t; b.classList.remove('hidden'); } }
 let toastT;
-function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 2600); }
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 2800); }
 
-const numFields = ['heading', 't1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legHeight'];
+const numFields = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legHeight'];
 function fillInputs(only) {
   const p = current.params;
   (only || numFields).forEach(k => { const el = $('p_' + k); if (el && document.activeElement !== el) el.value = p[k]; });
-  if (!only) {
-    $('p_rings').checked = !!p.rings; $('p_ticks').checked = p.ticks !== false; $('p_corridor').checked = !!p.corridor;
-    document.querySelectorAll('#turnSeg button').forEach(b => b.classList.toggle('on', b.dataset.turn === p.turn));
-    $('zoneName').textContent = current.name + (current.id ? '' : ' (non enregistrée)');
-  }
+  if (only) return;
+  $('p_rings').checked = !!p.rings; $('p_ticks').checked = p.ticks !== false;
+  document.querySelectorAll('#turnA button').forEach(b => b.classList.toggle('on', b.dataset.turn === current.turnA));
+  document.querySelectorAll('#turnB button').forEach(b => b.classList.toggle('on', b.dataset.turn === current.turnB));
+  document.querySelectorAll('#showSeg button').forEach(b => b.classList.toggle('on', b.dataset.show === current.show));
+  $('zoneName').textContent = current.name + (current.id ? '' : ' (non enregistrée)');
 }
 numFields.forEach(k => {
   $('p_' + k).addEventListener('input', e => {
     const v = parseFloat(String(e.target.value).replace(',', '.'));
     if (isNaN(v)) return;
-    current.params[k] = k === 'heading' ? ((v % 360) + 360) % 360 : v;
-    persist(); redraw();
+    current.params[k] = v; persist(); redraw();
   });
   $('p_' + k).addEventListener('blur', () => fillInputs([k]));
 });
-document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
-  const p = current.params; p.heading = ((Math.round(+p.heading) + +b.dataset.d) % 360 + 360) % 360;
-  fillInputs(['heading']); persist(); redraw();
+['A', 'B'].forEach(k => document.querySelectorAll('#turn' + k + ' button').forEach(b => b.addEventListener('click', () => {
+  current['turn' + k] = b.dataset.turn; fillInputs(); persist(); redraw();
+})));
+document.querySelectorAll('#showSeg button').forEach(b => b.addEventListener('click', () => {
+  current.show = b.dataset.show; fillInputs(); persist(); redraw();
 }));
-document.querySelectorAll('#turnSeg button').forEach(b => b.addEventListener('click', () => {
-  current.params.turn = b.dataset.turn; fillInputs(); persist(); redraw();
+document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
+  if (!hasGates()) return toast('Place d\'abord les deux portes');
+  const v = Geo.toLocal(current.gateA, current.gateB), d = Math.hypot(v.x, v.y);
+  const h = (axisHeading() + +b.dataset.rot) * Math.PI / 180;
+  current.gateB = Geo.fromLocal(current.gateA, { x: d * Math.sin(h), y: d * Math.cos(h) });
+  persist(); redraw();
 }));
 $('p_rings').addEventListener('change', e => { current.params.rings = e.target.checked; persist(); redraw(); });
 $('p_ticks').addEventListener('change', e => { current.params.ticks = e.target.checked; persist(); redraw(); });
-$('p_corridor').addEventListener('change', e => { current.params.corridor = e.target.checked; persist(); redraw(); });
 
-function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', placing); }
+function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', !!placing); }
 $('btnPlaceGates').addEventListener('click', () => {
-  placing = !placing; syncPlaceBtn();
-  if (placing) { setBanner('Touche la carte à l\'endroit des portes.'); closeSheet(); } else setBanner(null);
+  if (placing && hasGates()) { placing = null; setBanner(null); syncPlaceBtn(); return; }
+  placing = 'A'; syncPlaceBtn(); setBanner('Touche la carte pour placer la porte A.'); closeSheet();
 });
 map.on('click', e => {
   if (!placing) return;
-  current.gates = { lat: e.latlng.lat, lng: e.latlng.lng };
-  placing = false; syncPlaceBtn(); setBanner(null);
-  persist(); redraw();
-  toast('Portes placées. Oriente l\'axe avec la poignée blanche ou dans ⚙.');
+  const p = { lat: e.latlng.lat, lng: e.latlng.lng };
+  if (placing === 'A') {
+    current.gateA = p; placing = 'B';
+    if (markerA) markerA.setLatLng(LL(p));
+    setBanner('Touche maintenant la porte B (l\'autre bout du couloir).');
+    if (markerB) { map.removeLayer(markerB); markerB = null; } current.gateB = null;
+  } else {
+    current.gateB = p; placing = null; setBanner(null);
+    toast('Portes placées. Fais-les glisser pour ajuster.');
+  }
+  syncPlaceBtn(); persist(); redraw();
 });
 map.on('zoomend', redraw);
 
-// Feuille du bas
 function openSheet(tab) {
   $('sheet').classList.remove('hidden');
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -253,7 +310,6 @@ $('btnZones').addEventListener('click', () => openSheet('zones'));
 $('btnClose').addEventListener('click', closeSheet);
 document.querySelectorAll('.tabs [data-tab]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.tab)));
 
-// Dialogue maison (prompt est bloqué en mode appli)
 function ask(text, def) {
   return new Promise(res => {
     $('dlgText').textContent = text; $('dlgInput').value = def || ''; $('dialog').classList.remove('hidden');
@@ -290,27 +346,22 @@ function renderZones() {
 }
 function loadZone(id) {
   const z = zones.find(x => x.id === id); if (!z) return;
-  current = JSON.parse(JSON.stringify(z));
-  current.params = Object.assign({}, DEFAULT_PARAMS, current.params);
-  resetGateMarkers();
+  current = upgrade(clone(z));
+  resetGateMarkers(); placing = null; setBanner(null);
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
-  if (current.gates) map.setView([current.gates.lat, current.gates.lng], Math.max(current.zoom || 17, 16));
-  placing = false; fillInputs(); fitFigure(); persist(); redraw(); closeSheet();
-}
-function resetGateMarkers() {
-  if (gatesMarker) { map.removeLayer(gatesMarker); map.removeLayer(axisHandle); gatesMarker = axisHandle = null; }
+  fillInputs(); if (hasGates()) fitFigure(); persist(); redraw(); closeSheet();
 }
 $('btnSaveZone').addEventListener('click', async () => {
-  const n = await ask('Nom de la zone (ex. Bouloc – zone swoop) :', current.id ? current.name : ''); if (!n) return;
+  const n = await ask('Nom de la zone (ex. Bouloc – couloir swoop) :', current.id ? current.name : ''); if (!n) return;
   current.name = n;
-  if (!current.id) { current.id = 'z' + Date.now(); zones.push(JSON.parse(JSON.stringify(current))); }
+  if (!current.id) { current.id = 'z' + Date.now(); zones.push(clone(current)); }
   store.set('psv.zones', zones); persist(); fillInputs(); renderZones(); toast('Zone enregistrée');
 });
 $('btnNewZone').addEventListener('click', async () => {
   if (!(await ask('Créer une nouvelle zone au centre de la carte ? (les réglages de virage sont repris)'))) return;
   const params = Object.assign({}, current.params);
   current = newZone(map.getCenter()); current.params = params; current.zoom = map.getZoom();
-  resetGateMarkers(); placing = true; fillInputs(); persist(); redraw(); closeSheet();
+  resetGateMarkers(); placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
 });
 
 // ---------- Recherche ----------
@@ -319,7 +370,6 @@ function parseCoords(s) {
   if (d.length === 2 && d.every(x => /^-?\d+(\.\d+)?$/.test(x))) {
     const lat = +d[0], lng = +d[1]; if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng };
   }
-  // DMS : 43°36'12"N 1°20'5"E
   const m = s.match(/(\d+)[°\s]+(\d+)['’\s]+([\d.]+)?["”\s]*([NS])[\s,]+(\d+)[°\s]+(\d+)['’\s]+([\d.]+)?["”\s]*([EWO])/i);
   if (m) {
     const lat = (+m[1] + m[2] / 60 + (+m[3] || 0) / 3600) * (/s/i.test(m[4]) ? -1 : 1);
@@ -357,12 +407,25 @@ function locate(center) {
     if (posMarker) posMarker.setLatLng(ll);
     else posMarker = L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#2f80ff', fillOpacity: 1 }).addTo(map);
     if (center) map.setView(ll, Math.max(map.getZoom(), 17));
-  }, () => toast('Position refusée ou indisponible'), { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+  }, () => { if (center) toast('Position refusée ou indisponible'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 }
 $('btnLocate').addEventListener('click', () => locate(true));
-$('btnFit').addEventListener('click', () => { if (current.gates) fitFigure(); else toast('Place d\'abord les portes'); });
+$('btnFit').addEventListener('click', () => { if (hasGates()) fitFigure(); else toast('Place d\'abord les portes'); });
 
-// ---------- Hors-ligne ----------
+// ---------- Images satellite (cache commun carte / hors-ligne / PDF) ----------
+const tileUrl = (z, x, y) => TILE_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+async function getTileBlob(url) {
+  // Réponse lisible (CORS) obligatoire pour pouvoir dessiner l'image dans le PDF
+  if ('caches' in window) {
+    try {
+      const c = await caches.open(TILE_CACHE); const hit = await c.match(url);
+      if (hit && hit.type !== 'opaque') return await hit.blob();
+      const r = await fetch(url, { mode: 'cors' });
+      if (r.ok) { c.put(url, r.clone()).catch(() => {}); return await r.blob(); }
+    } catch (e) { /* on tente sans cache */ }
+  }
+  const r = await fetch(url, { mode: 'cors' }); if (!r.ok) throw new Error('tuile'); return r.blob();
+}
 function tilesAround(center, radiusM, zmin, zmax) {
   const list = [];
   for (let z = zmin; z <= zmax; z++) {
@@ -370,30 +433,23 @@ function tilesAround(center, radiusM, zmin, zmax) {
     const xt = lng => Math.floor((lng + 180) / 360 * n);
     const yt = lat => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n); };
     const nw = Geo.fromLocal(center, { x: -radiusM, y: radiusM }), se = Geo.fromLocal(center, { x: radiusM, y: -radiusM });
-    for (let x = xt(nw.lng); x <= xt(se.lng); x++) for (let y = yt(nw.lat); y <= yt(se.lat); y++)
-      list.push(TILE_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y));
+    for (let x = xt(nw.lng); x <= xt(se.lng); x++) for (let y = yt(nw.lat); y <= yt(se.lat); y++) list.push(tileUrl(z, x, y));
   }
   return list;
 }
 $('btnOffline').addEventListener('click', async () => {
   if (!('caches' in window)) { toast('Hors-ligne non pris en charge ici'); return; }
-  const center = current.gates || map.getCenter();
-  const urls = tilesAround(center, 700, 12, 19).concat(tilesAround(center, 2500, 12, 16));
-  const uniq = [...new Set(urls)];
-  if (!(await ask(`Télécharger ${uniq.length} images (environ ${Math.round(uniq.length * 25 / 1024)} Mo) autour ${current.gates ? 'des portes' : 'du centre de la carte'} ?`))) return;
-  const cache = await caches.open(TILE_CACHE);
-  let done = 0, fail = 0; const st = $('offlineStatus');
+  const center = hasGates()
+    ? { lat: (current.gateA.lat + current.gateB.lat) / 2, lng: (current.gateA.lng + current.gateB.lng) / 2 }
+    : map.getCenter();
+  const uniq = [...new Set(tilesAround(center, 700, 12, 19).concat(tilesAround(center, 2500, 12, 16)))];
+  if (!(await ask(`Télécharger ${uniq.length} images (environ ${Math.round(uniq.length * 25 / 1024)} Mo) autour ${hasGates() ? 'du couloir' : 'du centre de la carte'} ?`))) return;
+  let done = 0, fail = 0; const st = $('offlineStatus'), total = uniq.length;
   const worker = async () => {
     while (uniq.length) {
       const u = uniq.shift();
-      try {
-        if (!(await cache.match(u))) {
-          let r;
-          try { r = await fetch(u, { mode: 'cors' }); } catch (e) { r = await fetch(u, { mode: 'no-cors' }); }
-          if (r.ok || r.type === 'opaque') await cache.put(u, r); else fail++;
-        }
-      } catch (e) { fail++; }
-      done++; if (done % 10 === 0) st.textContent = `Téléchargement… ${done}`;
+      try { await getTileBlob(u); } catch (e) { fail++; }
+      done++; if (done % 10 === 0) st.textContent = `Téléchargement… ${done}/${total}`;
     }
   };
   await Promise.all(Array.from({ length: 6 }, worker));
@@ -402,9 +458,215 @@ $('btnOffline').addEventListener('click', async () => {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 });
 
+// ---------- Export PDF ----------
+let jsPdfLoading = null;
+function loadJsPdf() {
+  if (window.jspdf) return Promise.resolve();
+  if (!jsPdfLoading) jsPdfLoading = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = 'vendor/jspdf.umd.min.js'; s.onload = res; s.onerror = rej; document.head.append(s);
+  });
+  return jsPdfLoading;
+}
+function dateStamp() { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; }
+function safeName(s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'zone'; }
+
+async function renderPdfCanvas() {
+  const pts = figurePoints();
+  const CRS = L.CRS.EPSG3857;
+  // Emprise de la figure en pixels « monde » au zoom 19
+  const Z0 = 19;
+  const P = pts.map(p => CRS.latLngToPoint(L.latLng(p.lat, p.lng), Z0));
+  let minX = Math.min(...P.map(p => p.x)), maxX = Math.max(...P.map(p => p.x));
+  let minY = Math.min(...P.map(p => p.y)), maxY = Math.max(...P.map(p => p.y));
+  const fw = maxX - minX, fh = maxY - minY;
+  const landscape = fw >= fh;
+  const W = landscape ? 3508 : 2480, H = landscape ? 2480 : 3508; // A4 à 300 dpi
+  const fs = landscape ? 12 : 13, uu = W / 1000, lh = fs * 1.5 * uu; // police et interligne du bandeau
+  const band = Math.round((Math.max(5, 2.6 + configs().length) + 2.2) * lh); // bandeau d'informations en bas
+  const padX = 0.14, padY = 0.07; // marge latérale plus large pour les libellés
+  // Échelle : la figure tient dans la zone au-dessus du bandeau, avec une marge
+  const availW = W * (1 - 2 * padX), availH = (H - band) * (1 - 2 * padY);
+  const s = Math.min(availW / Math.max(fw, 1), availH / Math.max(fh, 1)); // px canvas par px monde z19
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const ox = W / 2 - cx * s, oy = (H - band) / 2 - cy * s; // origine : monde z19 → canvas
+  const toC = ll => { const q = CRS.latLngToPoint(L.latLng(ll.lat, ll.lng), Z0); return { x: q.x * s + ox, y: q.y * s + oy }; };
+
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#2b2b2b'; g.fillRect(0, 0, W, H);
+
+  // Choix du zoom des images : assez fin pour la résolution, au plus 19
+  let z = Z0;
+  while (z > 1 && s * Math.pow(2, Z0 - z) < 1) z--; // une tuile à z doit faire ≥ 256 px à l'écran… ou presque
+  const f = Math.pow(2, Z0 - z); // 1 px à z = f px à z19
+  const worldLeft = (0 - ox) / s / f, worldTop = (0 - oy) / s / f, worldRight = (W - ox) / s / f, worldBottom = (H - oy) / s / f;
+  const t0x = Math.floor(worldLeft / 256), t1x = Math.floor(worldRight / 256), t0y = Math.floor(worldTop / 256), t1y = Math.floor(worldBottom / 256);
+  const jobs = [];
+  let fails = 0;
+  for (let tx = t0x; tx <= t1x; tx++) for (let ty = t0y; ty <= t1y; ty++) jobs.push({ tx, ty });
+  const run = async () => {
+    while (jobs.length) {
+      const { tx, ty } = jobs.shift();
+      try {
+        const blob = await getTileBlob(tileUrl(z, tx, ty));
+        const img = await createImageBitmap(blob);
+        const x = tx * 256 * f * s + ox, y = ty * 256 * f * s + oy, size = 256 * f * s;
+        g.drawImage(img, x, y, size + 0.6, size + 0.6);
+      } catch (e) { fails++; }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, run));
+
+  // ---- Tracé ----
+  const u = W / 1000; // unité de taille relative à la page
+  const pxPerM = ll => { const a = toC(ll), b = toC(Geo.fromLocal(ll, { x: 100, y: 0 })); return Math.hypot(b.x - a.x, b.y - a.y) / 100; };
+  const line = (a, b, color, w, dash) => { g.save(); g.strokeStyle = color; g.lineWidth = w * u; g.setLineDash(dash ? dash.map(d => d * u) : []); g.beginPath(); const A = toC(a), B = toC(b); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.stroke(); g.restore(); };
+  const shadowText = (txt, x, y, color, size, align) => {
+    g.save(); g.font = `700 ${size * u}px -apple-system, Helvetica, Arial, sans-serif`; g.textBaseline = 'middle';
+    const w = g.measureText(txt).width, m = 12 * u;
+    if (!align) align = (x + w > W - m) ? 'right' : 'left'; // libellé à gauche du point s'il sortirait de la page
+    if (align === 'right' && x - w < m) x = m + w;          // recadrage horizontal dans la page
+    if (align === 'left' && x + w > W - m) x = W - m - w;
+    if (align === 'center') x = Math.min(Math.max(x, m + w / 2), W - m - w / 2);
+    y = Math.min(Math.max(y, 20 * u), H - band - 14 * u);   // jamais sous le bandeau
+    g.textAlign = align;
+    g.lineWidth = size * u * 0.28; g.strokeStyle = 'rgba(0,0,0,.85)'; g.lineJoin = 'round'; g.strokeText(txt, x, y); g.fillStyle = color; g.fillText(txt, x, y); g.restore();
+  };
+  const dot = (ll, color, r, label) => {
+    const c = toC(ll); g.save(); g.beginPath(); g.arc(c.x, c.y, r * u, 0, 2 * Math.PI); g.fillStyle = color; g.fill();
+    g.lineWidth = 1.2 * u; g.strokeStyle = '#111'; g.stroke(); g.restore();
+    if (label) shadowText(label, c.x + (r + 4) * u, c.y, color, 13);
+  };
+  const chevron = (from, to, frac, color) => {
+    const A = toC(from), B = toC(to), dx = B.x - A.x, dy = B.y - A.y, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n;
+    const mx = A.x + dx * frac, my = A.y + dy * frac, L0 = 12 * u;
+    g.save(); g.strokeStyle = color; g.lineWidth = 3 * u; g.beginPath();
+    g.moveTo(mx - ux * L0 - uy * L0 * 0.6, my - uy * L0 + ux * L0 * 0.6); g.lineTo(mx, my); g.lineTo(mx - ux * L0 + uy * L0 * 0.6, my - uy * L0 - ux * L0 * 0.6); g.stroke(); g.restore();
+  };
+  const circle = (center, radius, color) => {
+    if (!(radius > 0)) return;
+    const c = toC(center), R = radius * pxPerM(center), p = current.params;
+    g.save(); g.strokeStyle = color; g.lineWidth = 2.6 * u; g.fillStyle = color; g.globalAlpha = .08;
+    g.beginPath(); g.arc(c.x, c.y, R, 0, 2 * Math.PI); g.fill(); g.globalAlpha = 1; g.stroke();
+    if (p.rings) {
+      const v = +p.vref || 5; g.lineWidth = 1 * u; g.setLineDash([3 * u, 5 * u]); g.globalAlpha = .7;
+      for (let k = 1; k < v; k++) { g.beginPath(); g.arc(c.x, c.y, R * k / v, 0, 2 * Math.PI); g.stroke(); }
+      g.setLineDash([]); g.globalAlpha = 1;
+    }
+    if (p.ticks !== false) {
+      const st = Geo.tickSteps(R / (u * 1.4)) || { label: 90, minor: null };
+      g.lineWidth = 1.4 * u;
+      for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
+        const major = deg % st.label === 0, a = deg * Math.PI / 180, l = (major ? 12 : 6) * u;
+        g.beginPath(); g.moveTo(c.x + R * Math.sin(a), c.y - R * Math.cos(a)); g.lineTo(c.x + (R - l) * Math.sin(a), c.y - (R - l) * Math.cos(a)); g.stroke();
+        if (major) {
+          const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
+          shadowText(`${deg}°${card}`, c.x + (R + 14 * u) * Math.sin(a), c.y - (R + 14 * u) * Math.cos(a), color, 11, 'center');
+        }
+      }
+    }
+    g.restore();
+  };
+
+  line(current.gateA, current.gateB, AXIS_COLOR, 3.2);
+  const cfs = configs();
+  cfs.forEach(c => {
+    const col = c.colors, p = current.params;
+    line(c.behind, c.gate, AXIS_COLOR, 2, [9, 7]);
+    const len = Math.min(25, corridorLength() * 0.3);
+    chevron(c.gate, Geo.fromLocal(c.gate, { x: c.geo.f.x * len, y: c.geo.f.y * len }), 1, col.setup);
+    if ((+p.legLen || 0) > 0) {
+      line(c.legStart, c.setup, col.leg, 3.2); chevron(c.legStart, c.setup, 0.55, col.leg);
+      const S = toC(c.legStart);
+      dot(c.legStart, col.leg, 6);
+      // Libellé de branche jamais posé sur la branche :
+      // branche plutôt verticale → libellé à côté du point ; plutôt horizontale → au-dessus, côté extérieur
+      const Sp = toC(c.setup), dx = S.x - Sp.x, dy = S.y - Sp.y, dn = Math.hypot(dx, dy) || 1;
+      if (Math.abs(dx / dn) < 0.5) {
+        shadowText(legLine1(c), S.x + 12 * u, S.y - 9 * u, col.leg, 13);
+        shadowText(legLine2(c), S.x + 12 * u, S.y + 9 * u, col.leg, 11);
+      } else {
+        const al = dx > 0 ? 'left' : 'right';
+        shadowText(legLine1(c), S.x, S.y - 28 * u, col.leg, 13, al);
+        shadowText(legLine2(c), S.x, S.y - 12 * u, col.leg, 11, al);
+      }
+    }
+    line(c.setup, c.rec, '#ffffff', 1, [2, 6]);
+    circle(c.setup, c.geo.rSetup, col.setup);
+    circle(c.rec, c.geo.rRec, col.rec);
+    dot(c.setup, col.setup, 8, `Setup ${c.key}`);
+    dot(c.rec, col.rec, 6.5, `Recouvr. ${c.key}`);
+  });
+  dot(current.gateA, GATE_COLOR, 9, 'Porte A');
+  dot(current.gateB, GATE_COLOR, 9, 'Porte B');
+
+  // ---- Flèche du nord (haut droite) ----
+  const nx = W - 50 * u, ny = 70 * u;
+  g.save(); g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(nx, ny, 34 * u, 0, 2 * Math.PI); g.fill();
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(nx, ny - 26 * u); g.lineTo(nx - 12 * u, ny + 14 * u); g.lineTo(nx, ny + 6 * u); g.lineTo(nx + 12 * u, ny + 14 * u); g.closePath(); g.fill(); g.restore();
+  shadowText('N', nx, ny + 24 * u, '#fff', 12, 'center');
+
+  // ---- Échelle graphique (sur la photo, juste au-dessus du bandeau) ----
+  const by = H - band;
+  const tx = (s2, x, y, c, size, bold, align) => { g.save(); g.font = `${bold ? 700 : 500} ${(size || fs) * u}px -apple-system, Helvetica, Arial, sans-serif`; g.fillStyle = c || '#eee'; g.textBaseline = 'middle'; g.textAlign = align || 'left'; g.fillText(s2, x, y); g.restore(); };
+  const mppC = 1 / pxPerM(current.gateA);
+  const target = W * 0.18 * mppC, nice = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].reduce((a, b) => (b <= target ? b : a), 5);
+  const barW = nice / mppC, sx = 30 * u, sy = by - 28 * u;
+  g.save(); g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(sx - 10 * u, sy - 16 * u, barW + 90 * u, 32 * u);
+  g.fillStyle = '#fff'; g.fillRect(sx, sy - 4 * u, barW, 8 * u); g.fillStyle = '#111'; g.fillRect(sx + barW / 2, sy - 3 * u, barW / 2 - 1 * u, 6 * u); g.restore();
+  tx(`${nice} m`, sx + barW + 10 * u, sy, '#fff', 12, true);
+
+  // ---- Bandeau d'informations ----
+  g.save(); g.fillStyle = 'rgba(12,12,12,.82)'; g.fillRect(0, by, W, band); g.restore();
+  const p = current.params, t = (+p.t1 || 0) + (+p.t2 || 0), r0 = Math.round;
+  const col1 = 30 * u, col2 = W * 0.52, l0 = by + lh * 1.1;
+  tx(`${current.name}`, col1, l0, '#fff', fs * 1.3, true);
+  tx(`${new Date().toLocaleDateString('fr-FR')} · couloir ${r0(corridorLength())} m`, col1, l0 + lh * 1.2, '#bbb');
+  let ly = l0 + lh * 2.4;
+  cfs.forEach(c => { tx(`Porte ${c.key} : poser au ${r0(c.heading)}°, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}`, col1, ly, c.colors.setup, fs, true); ly += lh; });
+  [
+    `Abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
+    `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral`,
+    `Recouvrement : ${p.recBack} m arrière`,
+    `Branche : ${p.legLen} m · ${p.legTime} s · début à ${p.legHeight} m`,
+    `Cercles ${p.vref} m/s : setup ${r0(p.vref * t)} m · recouvr. ${r0(p.vref * p.t2)} m`
+  ].forEach((s2, i) => tx(s2, col2, l0 + i * lh, '#eee'));
+  tx(`Imagerie © Esri, Maxar, Earthstar Geographics · Setup PSV v${VERSION}`, W - 20 * u, H - 10 * u, '#888', 8, false, 'right');
+
+  return { canvas: cv, landscape, fails };
+}
+
+let pdfFile = null;
+$('btnPdf').addEventListener('click', async () => {
+  if (!hasGates()) return toast('Place d\'abord les deux portes');
+  const b = $('btnPdf'); b.disabled = true; const old = b.textContent; b.textContent = 'Préparation du PDF…';
+  try {
+    await loadJsPdf();
+    const { canvas, landscape, fails } = await renderPdfCanvas();
+    const doc = new window.jspdf.jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+    const wmm = landscape ? 297 : 210, hmm = landscape ? 210 : 297;
+    doc.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', 0, 0, wmm, hmm);
+    const name = `${dateStamp()}_Setup_PSV_${safeName(current.name)}.pdf`;
+    pdfFile = new File([doc.output('blob')], name, { type: 'application/pdf' });
+    $('pdfName').textContent = name + (fails ? ` (${fails} morceaux de photo manquants)` : '');
+    $('pdfReady').classList.remove('hidden');
+  } catch (e) {
+    console.error(e); toast('Échec du PDF : ' + (e && e.message ? e.message : 'erreur'));
+  } finally { b.disabled = false; b.textContent = old; }
+});
+$('pdfClose').addEventListener('click', () => $('pdfReady').classList.add('hidden'));
+$('pdfShare').addEventListener('click', async () => {
+  if (!pdfFile) return;
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) { await navigator.share({ files: [pdfFile], title: pdfFile.name }); }
+    else { const url = URL.createObjectURL(pdfFile); const a = document.createElement('a'); a.href = url; a.download = pdfFile.name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
+    $('pdfReady').classList.add('hidden');
+  } catch (e) { if (e && e.name !== 'AbortError') toast('Partage impossible'); }
+});
+
 // ---------- Sauvegarde ----------
 $('btnExport').addEventListener('click', async () => {
-  const data = JSON.stringify({ v: 1, zones, current, lastParams: current.params });
+  const data = JSON.stringify({ v: 2, zones, current, lastParams: current.params });
   try { await navigator.clipboard.writeText(data); toast('Données copiées : colle-les dans une note pour les garder'); }
   catch (e) { $('ioText').value = data; $('ioText').classList.remove('hidden'); toast('Copie auto impossible : sélectionne le texte'); }
 });
@@ -414,8 +676,8 @@ $('btnImportGo').addEventListener('click', async () => {
     const d = JSON.parse($('ioText').value);
     if (!Array.isArray(d.zones)) throw 0;
     if (!(await ask(`Remplacer tes zones par les ${d.zones.length} zones importées ?`))) return;
-    zones = d.zones; store.set('psv.zones', zones);
-    if (d.current) { current = d.current; resetGateMarkers(); }
+    zones = d.zones.map(upgrade); store.set('psv.zones', zones);
+    if (d.current) { current = upgrade(d.current); resetGateMarkers(); }
     fillInputs(); persist(); redraw(); renderZones(); toast('Import réussi');
     $('ioText').classList.add('hidden'); $('btnImportGo').classList.add('hidden');
   } catch (e) { toast('Données illisibles'); }
@@ -426,7 +688,7 @@ function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<':
 // ---------- Démarrage ----------
 $('ver').textContent = VERSION;
 fillInputs();
-if (current.gates) fitFigure();
+if (hasGates()) fitFigure();
 redraw();
-if (!current.gates && !current.id && current.zoom < 10) locate(true); else locate(false);
+if (!current.gateA && !current.id && current.zoom < 10) locate(true); else locate(false);
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
