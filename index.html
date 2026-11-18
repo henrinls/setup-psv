@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.4.0">
+<link rel="stylesheet" href="style.css?v=3.4.1">
 </head>
 <body>
 <div id="map"></div>
@@ -55,6 +55,10 @@
 
   <div id="tab-reglages" class="tab hidden">
     <div class="row"><button id="btnNewZone" class="wide">＋ Nouvelle zone</button></div>
+    <h3>Mes zones</h3>
+    <p class="hint">Tiens ≡ et glisse pour changer l'ordre.</p>
+    <ul id="zoneList"></ul>
+
     <h3>Portes</h3>
     <div class="row grid2">
       <button id="btnPlaceA" class="wide">📍 Porte 1</button>
@@ -87,10 +91,6 @@
     <p class="hint">PDF A4 paysage, étape de base vers le haut, nord dans un coin, tel qu'affiché.</p>
     <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour du couloir)</button></div>
     <div id="offlineStatus" class="hint"></div>
-
-    <h3>Mes zones</h3>
-    <p class="hint">Tiens ≡ et glisse pour changer l'ordre.</p>
-    <ul id="zoneList"></ul>
 
     <h3>Sauvegarde</h3>
     <div class="row grid2">
@@ -170,9 +170,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.4.0"></script>
-<script src="vendor/leaflet-rotate.js?v=3.4.0"></script>
-<script src="geo.js?v=3.4.0"></script>
-<script src="app.js?v=3.4.0"></script>
+<script src="vendor/leaflet.js?v=3.4.1"></script>
+<script src="vendor/leaflet-rotate.js?v=3.4.1"></script>
+<script src="geo.js?v=3.4.1"></script>
+<script src="app.js?v=3.4.1"></script>
 </body>
 </html>
