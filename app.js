@@ -1,10 +1,10 @@
 'use strict';
-const VERSION = '2.4.0';
+const VERSION = '2.5.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
   t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
-  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, labels: true
+  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, labels: true, rec: true
 };
 const PALETTE = {
   A: { setup: '#ff7a1a', rec: '#22d3ee', leg: '#e879f9' },
@@ -62,6 +62,7 @@ function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h +
 function cfgName(c) { return `${hdg(c.heading)} ${c.turn}`; }
 function cfgNameKey(key) { return hasGates() ? `${hdg(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? '1re porte' : '2e porte'); }
 const showLabels = () => current.params.labels !== false;
+const showRec = () => current.params.rec !== false; // point de recouvrement + son cercle
 
 // ---------- Figure (calcul pur, réutilisé par la carte et le PDF) ----------
 function hasGates() { return !!(current.gateA && current.gateB); }
@@ -90,7 +91,7 @@ function figurePoints() {
   if (current.gateA) pts.push(current.gateA);
   if (current.gateB) pts.push(current.gateB);
   configs().forEach(c => {
-    pts.push(c.rec, c.legStart, c.behind);
+    pts.push(c.legStart); if (showRec()) pts.push(c.rec, c.behind);
     const r = c.geo.rSetup || 0;
     [[r, 0], [-r, 0], [0, r], [0, -r]].forEach(([x, y]) => pts.push(Geo.fromLocal(c.setup, { x, y })));
     pts.push(c.setup);
@@ -161,7 +162,7 @@ function draw() {
   L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
   configs().forEach(c => {
     const col = c.colors;
-    L.polyline([LL(c.behind), LL(c.gate)], { color: AXIS_COLOR, weight: 2, dashArray: '8 6', opacity: .9, interactive: false }).addTo(fig);
+    if (showRec()) L.polyline([LL(c.behind), LL(c.gate)], { color: AXIS_COLOR, weight: 2, dashArray: '8 6', opacity: .9, interactive: false }).addTo(fig);
     // Flèche du sens du poser depuis cette porte
     const other = c.key === 'A' ? current.gateB : current.gateA;
     const len = Math.min(25, corridorLength() * 0.3);
@@ -175,12 +176,12 @@ function draw() {
       L.polyline(arrowAt(c.legStart, c.setup, 0.55, Math.min(10, (+p.legLen || 0) * 0.08 + 3)), { color: col.leg, weight: 3, interactive: false }).addTo(fig);
       L.marker(LL(c.legStart), { icon: dotIcon(col.leg, 10, showLabels() ? `${legLine1(c)}<br><small>${legLine2(c)}</small>` : ''), interactive: false }).addTo(fig);
     }
-    L.polyline([LL(c.setup), LL(c.rec)], { color: '#fff', weight: 1, opacity: .45, dashArray: '2 6', interactive: false }).addTo(fig);
+    if (showRec()) L.polyline([LL(c.setup), LL(c.rec)], { color: '#fff', weight: 1, opacity: .45, dashArray: '2 6', interactive: false }).addTo(fig);
 
     drawWindCircle(c.setup, c.geo.rSetup, col.setup);
-    drawWindCircle(c.rec, c.geo.rRec, col.rec);
+    if (showRec()) drawWindCircle(c.rec, c.geo.rRec, col.rec);
     L.marker(LL(c.setup), { icon: dotIcon(col.setup, 14, showLabels() ? `Setup ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
-    L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, showLabels() ? `Recouvr. ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
+    if (showRec()) L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, showLabels() ? `Recouvr. ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
   });
   placeGateMarkers();
 }
@@ -292,6 +293,7 @@ function syncQuick() {
   $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
   $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
   $('qLabels').classList.toggle('on', showLabels());
+  $('qRec').classList.toggle('on', showRec());
   $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
 }
 function quick(fn, msg) { fn(); syncQuick(); persist(); redraw(); if (msg) toast(msg()); }
@@ -306,6 +308,7 @@ function toggleShow(k) {
 $('qShowA').addEventListener('click', () => toggleShow('A'));
 $('qShowB').addEventListener('click', () => toggleShow('B'));
 $('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
+$('qRec').addEventListener('click', () => quick(() => { current.params.rec = !showRec(); }, () => showRec() ? 'Recouvrement affiché' : 'Recouvrement masqué'));
 $('qLabels').addEventListener('click', () => quick(() => { current.params.labels = !showLabels(); resetGateMarkers(); }, () => showLabels() ? 'Textes affichés' : 'Textes masqués'));
 $('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
 document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
@@ -647,7 +650,7 @@ async function renderPdfCanvas() {
   const cfs = configs();
   cfs.forEach(c => {
     const col = c.colors, p = current.params;
-    line(c.behind, c.gate, AXIS_COLOR, 2, [9, 7]);
+    if (showRec()) line(c.behind, c.gate, AXIS_COLOR, 2, [9, 7]);
     const len = Math.min(25, corridorLength() * 0.3);
     chevron(c.gate, Geo.fromLocal(c.gate, { x: c.geo.f.x * len, y: c.geo.f.y * len }), 1, col.setup);
     if ((+p.legLen || 0) > 0) {
@@ -666,11 +669,11 @@ async function renderPdfCanvas() {
         shadowText(legLine2(c), S.x, S.y - 12 * u, col.leg, 11, al);
       }
     }
-    line(c.setup, c.rec, '#ffffff', 1, [2, 6]);
+    if (showRec()) line(c.setup, c.rec, '#ffffff', 1, [2, 6]);
     circle(c.setup, c.geo.rSetup, col.setup);
-    circle(c.rec, c.geo.rRec, col.rec);
+    if (showRec()) circle(c.rec, c.geo.rRec, col.rec);
     dot(c.setup, col.setup, 8, `Setup ${cfgName(c)}`);
-    dot(c.rec, col.rec, 6.5, `Recouvr. ${cfgName(c)}`);
+    if (showRec()) dot(c.rec, col.rec, 6.5, `Recouvr. ${cfgName(c)}`);
   });
   dot(current.gateA, GATE_COLOR, 9, `Portes ${hdg(headingOf('A'))}`);
   dot(current.gateB, GATE_COLOR, 9, `Portes ${hdg(headingOf('B'))}`);
