@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.9.3';
+const VERSION = '3.9.4';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -96,8 +96,9 @@ function corridorLength() { const v = Geo.toLocal(current.gateA, current.gateB);
 function configs() {
   if (!hasGates()) return [];
   const hA = axisHeading(), hB = (hA + 180) % 360, out = [];
-  if (current.single ? current.show !== 'none' : current.show !== 'B') out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
-  if (!current.single && current.show !== 'A') out.push({ key: 'B', gate: current.gateB, heading: hB, turn: current.turnB });
+  const sh = current.show || 'AB';
+  if (current.single ? sh !== 'none' : (sh === 'AB' || sh === 'A')) out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
+  if (!current.single && (sh === 'AB' || sh === 'B')) out.push({ key: 'B', gate: current.gateB, heading: hB, turn: current.turnB });
   return out.map(c => {
     const g = Geo.compute(Object.assign({}, current.params, { heading: c.heading, turn: c.turn }));
     const ll = v => Geo.fromLocal(c.gate, v);
@@ -185,7 +186,7 @@ function draw() {
 
   // Couloir A–B + prolongements derrière chaque porte jusqu'au point de snap
   if (current.single) { if (current.show !== 'none') L.polyline([LL(current.gateA), LL(current.gateB)], { color: GATE_COLOR, weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(fig); }
-  else L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
+  else if (current.show !== 'none') L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
   configs().forEach(c => {
     const col = c.colors;
     if (showRec()) L.polyline([LL(c.behind), LL(c.gate)], { color: AXIS_COLOR, weight: 2, dashArray: '8 6', opacity: .9, interactive: false }).addTo(fig);
@@ -500,7 +501,7 @@ function syncQuick() {
   const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
   $('qShowB').classList.toggle('hidden', !!current.single); $('qTurnB').classList.toggle('hidden', !!current.single);
-  $('qShowA').classList.toggle('on', current.single ? sh !== 'none' : sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
+  $('qShowA').classList.toggle('on', current.single ? sh !== 'none' : (sh === 'AB' || sh === 'A')); $('qShowB').classList.toggle('on', sh === 'AB' || sh === 'B');
   $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
   $('qRec').classList.toggle('on', showRec());
   $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
@@ -513,10 +514,11 @@ function toggleShow(k) {
     quick(() => { current.show = current.show === 'none' ? 'AB' : 'none'; }, () => current.show === 'none' ? 'Configuration masquée' : 'Configuration affichée');
     return;
   }
-  const vis = { A: current.show !== 'B', B: current.show !== 'A' };
+  const sh = current.show || 'AB';
+  const vis = { A: sh === 'AB' || sh === 'A', B: sh === 'AB' || sh === 'B' };
   vis[k] = !vis[k];
-  if (!vis.A && !vis.B) { toast('Il faut au moins une porte affichée'); return; }
-  quick(() => { current.show = vis.A && vis.B ? 'AB' : (vis.A ? 'A' : 'B'); });
+  // les deux yeux fermés : on ne garde que les portes (couloir, étapes de base, points et cercles masqués)
+  quick(() => { current.show = vis.A && vis.B ? 'AB' : vis.A ? 'A' : vis.B ? 'B' : 'none'; });
 }
 $('qShowA').addEventListener('click', () => toggleShow('A'));
 $('qShowB').addEventListener('click', () => toggleShow('B'));
@@ -1098,7 +1100,7 @@ async function renderPdfCanvas() {
     g.restore();
   };
 
-  if (!current.single) line(current.gateA, current.gateB, AXIS_COLOR, 3.2);
+  if (!current.single && current.show !== 'none') line(current.gateA, current.gateB, AXIS_COLOR, 3.2);
   const cfs = configs();
   cfs.forEach(c => {
     const col = c.colors, p = current.params;
