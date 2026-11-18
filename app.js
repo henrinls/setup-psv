@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.7.2';
+const VERSION = '2.7.3';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -282,6 +282,7 @@ function freeRect() {
 }
 function fitFigure() {
   const pts = figurePoints(); if (pts.length < 2) return;
+  map.invalidateSize({ animate: false }); // taille réelle de l'écran (portrait / paysage)
   for (let pass = 0; pass < 2; pass++) { // 2 passes : la 2e corrige les arrondis du zoom
     const P = pts.map(p => map.latLngToContainerPoint(LL(p)));
     const x0 = Math.min(...P.map(p => p.x)), x1 = Math.max(...P.map(p => p.x));
@@ -438,6 +439,8 @@ map.on('click', e => {
   syncPlaceBtn(); persist(); redraw();
 });
 map.on('zoomend', redraw);
+// Rotation du téléphone : Leaflet doit relire la taille de l'écran
+['resize', 'orientationchange'].forEach(ev => window.addEventListener(ev, () => setTimeout(() => map.invalidateSize({ animate: false }), 250)));
 
 function openSheet(tab) {
   $('sheet').classList.remove('hidden');
