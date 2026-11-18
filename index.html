@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=2.6.1">
+<link rel="stylesheet" href="style.css?v=2.6.2">
 </head>
 <body>
 <div id="map"></div>
@@ -34,7 +34,7 @@
   <button id="qTurnA" class="qa" title="Sens du virage depuis la 1re porte"></button>
   <button id="qShowB" class="qb" title="Afficher la configuration de la 2e porte"></button>
   <button id="qTurnB" class="qb" title="Sens du virage depuis la 2e porte"></button>
-  <button id="qRec" title="Afficher / masquer le point de recouvrement et son cercle">Rec.</button>
+  <button id="qRec" title="Afficher / masquer le point de snap et son cercle">Snap</button>
   <button id="qLabels" title="Afficher / masquer les textes">Aa</button>
   <button id="qTicks" title="Graduations en degrés">0°</button>
   <button id="qRings" title="Anneaux 1 m/s">◎</button>
@@ -67,7 +67,7 @@
     <h3>Temps du virage</h3>
     <div class="grid2">
       <div><label>Abattée + rotation (s)</label><input id="p_t1" inputmode="decimal"></div>
-      <div><label>Recouvrement (s)</label><input id="p_t2" inputmode="decimal"></div>
+      <div><label>Recouvrement, du snap aux portes (s)</label><input id="p_t2" inputmode="decimal"></div>
     </div>
 
     <h3>Point de setup (vent nul)</h3>
@@ -77,7 +77,7 @@
     </div>
     <p class="hint">Le déport latéral se met du côté du virage. Valeur négative = côté opposé.</p>
 
-    <h3>Point de recouvrement</h3>
+    <h3>Point de snap</h3>
     <div class="grid2">
       <div><label>Déport arrière (m)</label><input id="p_recBack" inputmode="decimal"></div>
       <div><label>Vent de référence (m/s)</label><input id="p_vref" inputmode="decimal"></div>
@@ -143,9 +143,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=2.6.1"></script>
-<script src="vendor/leaflet-rotate.js?v=2.6.1"></script>
-<script src="geo.js?v=2.6.1"></script>
-<script src="app.js?v=2.6.1"></script>
+<script src="vendor/leaflet.js?v=2.6.2"></script>
+<script src="vendor/leaflet-rotate.js?v=2.6.2"></script>
+<script src="geo.js?v=2.6.2"></script>
+<script src="app.js?v=2.6.2"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.6.1';
+const VERSION = '2.6.2';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -67,7 +67,7 @@ function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h +
 function cfgName(c) { return `${hdg(c.heading)} ${c.turn}`; }
 function cfgNameKey(key) { return hasGates() ? `${hdg(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? '1re porte' : '2e porte'); }
 const showLabels = () => current.params.labels !== false;
-const showRec = () => current.params.rec !== false; // point de recouvrement + son cercle
+const showRec = () => current.params.rec !== false; // point de snap + son cercle (le temps de recouvrement = du point de snap aux portes)
 
 // ---------- Figure (calcul pur, réutilisé par la carte et le PDF) ----------
 function hasGates() { return !!(current.gateA && current.gateB); }
@@ -163,7 +163,7 @@ function draw() {
   if (!placing) setBanner(null);
   const p = current.params;
 
-  // Couloir A–B + prolongements derrière chaque porte jusqu'au recouvrement
+  // Couloir A–B + prolongements derrière chaque porte jusqu'au point de snap
   L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
   configs().forEach(c => {
     const col = c.colors;
@@ -189,7 +189,7 @@ function draw() {
     drawWindCircle(c.setup, c.geo.rSetup, col.setup);
     if (showRec()) drawWindCircle(c.rec, c.geo.rRec, col.rec);
     L.marker(LL(c.setup), { icon: dotIcon(col.setup, 14, showLabels() ? `Setup ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
-    if (showRec()) L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, showLabels() ? `Recouvr. ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
+    if (showRec()) L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, showLabels() ? `Snap ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
   });
   placeGateMarkers();
 }
@@ -284,8 +284,8 @@ function updateLegend() {
   configs().forEach(c => {
     h += `<div><i style="background:${c.colors.setup}"></i>${cfgName(c)} : poser au ${hdg(c.heading)}, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}</div>`;
   });
-  h += `<div class="mut">Cercles 5 m/s : setup ${r0((+p.vref || 0) * t)} m · recouvr. ${r0((+p.vref || 0) * (+p.t2 || 0))} m</div>`;
-  h += `<div class="mut">1 m/s = ${r0(t)} m (setup) · ${r0(+p.t2 || 0)} m (recouvr.)</div>`;
+  h += `<div class="mut">Cercles 5 m/s : setup ${r0((+p.vref || 0) * t)} m · snap ${r0((+p.vref || 0) * (+p.t2 || 0))} m</div>`;
+  h += `<div class="mut">1 m/s = ${r0(t)} m (setup) · ${r0(+p.t2 || 0)} m (snap)</div>`;
   $('legend').innerHTML = h;
   $('legend').classList.toggle('hidden', !showLabels());
 }
@@ -343,7 +343,7 @@ function toggleShow(k) {
 $('qShowA').addEventListener('click', () => toggleShow('A'));
 $('qShowB').addEventListener('click', () => toggleShow('B'));
 $('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
-$('qRec').addEventListener('click', () => quick(() => { current.params.rec = !showRec(); }, () => showRec() ? 'Recouvrement affiché' : 'Recouvrement masqué'));
+$('qRec').addEventListener('click', () => quick(() => { current.params.rec = !showRec(); }, () => showRec() ? 'Point de snap affiché' : 'Point de snap masqué'));
 $('qLabels').addEventListener('click', () => quick(() => { current.params.labels = !showLabels(); resetGateMarkers(); }, () => showLabels() ? 'Textes affichés' : 'Textes masqués'));
 $('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
 document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
@@ -729,7 +729,7 @@ async function renderPdfCanvas() {
     circle(c.setup, c.geo.rSetup, col.setup);
     if (showRec()) circle(c.rec, c.geo.rRec, col.rec);
     dot(c.setup, col.setup, 8, `Setup ${cfgName(c)}`);
-    if (showRec()) dot(c.rec, col.rec, 6.5, `Recouvr. ${cfgName(c)}`);
+    if (showRec()) dot(c.rec, col.rec, 6.5, `Snap ${cfgName(c)}`);
   });
   gateMark('A', `Portes ${hdg(headingOf('A'))}`);
   gateMark('B', `Portes ${hdg(headingOf('B'))}`);
@@ -763,9 +763,9 @@ async function renderPdfCanvas() {
   [
     `Abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
     `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral`,
-    `Recouvrement : ${p.recBack} m arrière`,
+    `Point de snap : ${p.recBack} m arrière`,
     `Branche : ${p.legLen} m · ${p.legTime} s · début à ${p.legHeight} m`,
-    `Cercles ${p.vref} m/s : setup ${r0(p.vref * t)} m · recouvr. ${r0(p.vref * p.t2)} m`
+    `Cercles ${p.vref} m/s : setup ${r0(p.vref * t)} m · snap ${r0(p.vref * p.t2)} m`
   ].forEach((s2, i) => tx(s2, col2, l0 + i * lh, '#eee'));
   tx(`Imagerie © Esri, Maxar, Earthstar Geographics · Setup PSV v${VERSION}`, W - 20 * u, H - 10 * u, '#888', 8, false, 'right');
 
