@@ -86,3 +86,5 @@ button.danger{border-color:#a33;color:#ff8a8a}
 #zoneList .zoff{display:inline-flex;align-items:center;gap:4px;color:#7fc8ff;font-weight:400}#zoneList .zoffdel{padding:2px 7px;font-size:13px;min-height:0}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.grid3 button{font-size:14px;padding-left:4px;padding-right:4px}
 .sarrow{-webkit-touch-callout:none;user-select:none}.sarrow.lifting svg{transform:scale(1.3)}
+/* Paysage : l'îlot noir de l'iPhone masque un bord (gauche ou droit selon le sens) → boutons de gauche décalés d'environ 3/4 de bouton */
+@media (orientation:landscape){#quick{left:53px}#top{padding-left:55px;padding-right:55px}.leaflet-right .leaflet-control-zoom{margin-right:55px}.leaflet-left .leaflet-control-scale{margin-left:55px}#legend{right:110px}}
