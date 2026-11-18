@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.7.0';
+const VERSION = '2.7.1';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -359,7 +359,7 @@ $('btnPlaceGates').addEventListener('click', () => {
 });
 // ---------- Mesure : cap et distance entre deux points touchés (dans l'ordre) ----------
 const measLayer = L.layerGroup().addTo(map);
-const meas = { active: false, p1: null };
+const meas = { active: false, a: null, b: null, ma: null, mb: null, line: null, halo: null, lbl: null };
 function capDeg(a, b) { // cap initial (orthodromie) de a vers b, en degrés
   const r = Math.PI / 180, f1 = a.lat * r, f2 = b.lat * r, dl = (b.lng - a.lng) * r;
   const y = Math.sin(dl) * Math.cos(f2), x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
@@ -367,28 +367,41 @@ function capDeg(a, b) { // cap initial (orthodromie) de a vers b, en degrés
 }
 function fmtDist(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2).replace('.', ',')} km`; }
 function measBox(t) { const b = $('measureBox'); if (!t) b.classList.add('hidden'); else { b.innerHTML = t; b.classList.remove('hidden'); } }
-function stopMeasure() { meas.active = false; meas.p1 = null; measLayer.clearLayers(); measBox(null); $('qMeasure').classList.remove('on'); }
+function stopMeasure() {
+  Object.assign(meas, { active: false, a: null, b: null, ma: null, mb: null, line: null, halo: null, lbl: null });
+  measLayer.clearLayers(); measBox(null); $('qMeasure').classList.remove('on');
+}
 $('qMeasure').addEventListener('click', () => {
-  if (meas.active || measLayer.getLayers().length) { stopMeasure(); return; }
+  if (meas.active) { stopMeasure(); return; }
   if (placing) return toast('Termine d\'abord le placement des portes');
-  meas.active = true; meas.p1 = null; $('qMeasure').classList.add('on');
+  meas.active = true; $('qMeasure').classList.add('on');
   measBox('Mesure : touche le <b>1er point</b>');
 });
-const measDot = p => L.circleMarker(LL(p), { radius: 6, color: '#fff', weight: 2, fillColor: '#00e5ff', fillOpacity: 1, interactive: false });
-function measureClick(p) {
-  if (!meas.p1) {
-    measLayer.clearLayers(); meas.p1 = p; measDot(p).addTo(measLayer);
-    measBox('Mesure : touche le <b>2e point</b>');
-    return;
+// Points de mesure déplaçables (comme les portes) : la mesure se met à jour pendant le glissement
+const measIcon = L.divIcon({ className: 'measpt', iconSize: [34, 34], iconAnchor: [17, 17], html: '<span></span>' });
+function measMarker(key) {
+  const m = L.marker(LL(meas[key]), { draggable: true, icon: measIcon, zIndexOffset: 900 }).addTo(measLayer);
+  m.on('drag', e => { meas[key] = { lat: e.latlng.lat, lng: e.latlng.lng }; updateMeasure(); });
+  return m;
+}
+function updateMeasure() {
+  if (!meas.a || !meas.b) return;
+  const a = meas.a, b = meas.b, d = map.distance(LL(a), LL(b)), c = capDeg(a, b), mid = [(a.lat + b.lat) / 2, (a.lng + b.lng) / 2];
+  const txt = `${hdg(c)} · ${fmtDist(d)}`;
+  if (!meas.line) {
+    meas.halo = L.polyline([LL(a), LL(b)], { color: '#000', weight: 5, opacity: .5, interactive: false }).addTo(measLayer);
+    meas.line = L.polyline([LL(a), LL(b)], { color: '#00e5ff', weight: 3, dashArray: '8 6', interactive: false }).addTo(measLayer);
+    meas.lbl = L.marker(mid, { interactive: false, icon: L.divIcon({ className: 'measlbl', iconSize: [0, 0], html: `<span>${txt}</span>` }) }).addTo(measLayer);
+  } else {
+    meas.halo.setLatLngs([LL(a), LL(b)]); meas.line.setLatLngs([LL(a), LL(b)]); meas.lbl.setLatLng(mid);
+    const el = meas.lbl.getElement && meas.lbl.getElement(); if (el) el.querySelector('span').textContent = txt;
   }
-  const a = meas.p1, b = p, d = map.distance(LL(a), LL(b)), c = capDeg(a, b);
-  L.polyline([LL(a), LL(b)], { color: '#000', weight: 5, opacity: .5, interactive: false }).addTo(measLayer);
-  L.polyline([LL(a), LL(b)], { color: '#00e5ff', weight: 3, dashArray: '8 6', interactive: false }).addTo(measLayer);
-  measDot(a).addTo(measLayer); measDot(b).addTo(measLayer);
-  L.marker([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2], { interactive: false, icon: L.divIcon({ className: 'measlbl', iconSize: [0, 0],
-    html: `<span>${hdg(c)} · ${fmtDist(d)}</span>` }) }).addTo(measLayer);
-  meas.p1 = null; // le prochain appui recommence une mesure
-  measBox(`<b>Cap ${hdg(c)} · ${fmtDist(d)}</b><br><small>Nouveau point = nouvelle mesure · 📏 = effacer</small>`);
+  measBox(`<b>Cap ${hdg(c)} · ${fmtDist(d)}</b><br><small>Fais glisser les points pour ajuster · 📏 = effacer</small>`);
+}
+function measureClick(p) {
+  if (!meas.a) { meas.a = p; meas.ma = measMarker('a'); measBox('Mesure : touche le <b>2e point</b>'); return; }
+  if (!meas.b) { meas.b = p; meas.mb = measMarker('b'); updateMeasure(); }
+  // une fois les deux points posés, on les déplace au doigt ; un appui sur la carte ne fait rien
 }
 map.on('click', e => {
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
