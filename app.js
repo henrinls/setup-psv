@@ -1,10 +1,10 @@
 'use strict';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v1';
 const DEFAULT_PARAMS = {
   heading: 0, turn: 'G', t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
-  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, corridor: true
+  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, corridor: true
 };
 const COLORS = { gates: '#ffd400', axis: '#ffffff', setup: '#ff7a1a', rec: '#22d3ee', leg: '#e879f9', ring: '#ff7a1a' };
 
@@ -118,6 +118,7 @@ function drawWindCircle(g, centerLocal, radius, color, rings) {
       L.circle([center.lat, center.lng], { radius: radius * k / v, color, weight: 1, opacity: .55, fill: false, dashArray: '3 5', interactive: false }).addTo(fig);
     }
   }
+  if (current.params.ticks === false) return; // version épurée : pas de graduation
   // Graduations
   const z = map.getZoom();
   const mpp = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, z + 8);
@@ -200,7 +201,7 @@ function fillInputs(only) {
   const p = current.params;
   (only || numFields).forEach(k => { const el = $('p_' + k); if (el && document.activeElement !== el) el.value = p[k]; });
   if (!only) {
-    $('p_rings').checked = !!p.rings; $('p_corridor').checked = !!p.corridor;
+    $('p_rings').checked = !!p.rings; $('p_ticks').checked = p.ticks !== false; $('p_corridor').checked = !!p.corridor;
     document.querySelectorAll('#turnSeg button').forEach(b => b.classList.toggle('on', b.dataset.turn === p.turn));
     $('zoneName').textContent = current.name + (current.id ? '' : ' (non enregistrée)');
   }
@@ -222,6 +223,7 @@ document.querySelectorAll('#turnSeg button').forEach(b => b.addEventListener('cl
   current.params.turn = b.dataset.turn; fillInputs(); persist(); redraw();
 }));
 $('p_rings').addEventListener('change', e => { current.params.rings = e.target.checked; persist(); redraw(); });
+$('p_ticks').addEventListener('change', e => { current.params.ticks = e.target.checked; persist(); redraw(); });
 $('p_corridor').addEventListener('change', e => { current.params.corridor = e.target.checked; persist(); redraw(); });
 
 function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', placing); }
