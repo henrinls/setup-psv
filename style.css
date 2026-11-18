@@ -84,3 +84,5 @@ button.danger{border-color:#a33;color:#ff8a8a}
 #zoneList .zhandle{touch-action:none;cursor:grab;font-size:22px;color:#888;padding:6px 10px 6px 2px;user-select:none;-webkit-user-select:none}
 #zoneList li.zdrag{position:relative;z-index:5;background:#2a2a2a;box-shadow:0 4px 14px rgba(0,0,0,.6)}
 #zoneList .zoff{display:inline-flex;align-items:center;gap:4px;color:#7fc8ff;font-weight:400}#zoneList .zoffdel{padding:2px 7px;font-size:13px;min-height:0}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.grid3 button{font-size:14px;padding-left:4px;padding-right:4px}
+.sarrow{-webkit-touch-callout:none;user-select:none}.sarrow.lifting svg{transform:scale(1.3)}

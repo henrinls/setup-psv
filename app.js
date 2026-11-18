@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.6.1';
+const VERSION = '3.7.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -36,7 +36,7 @@ function upgrade(z) {
     z.turnB = z.params.turn || 'G';
   }
   delete z.gates; delete z.params.heading; delete z.params.turn; delete z.params.corridor;
-  z.turnA = z.turnA || 'G'; z.turnB = z.turnB || 'G'; z.show = z.show || 'AB';
+  z.turnA = z.turnA || 'G'; z.turnB = z.turnB || 'G'; z.show = z.show || 'AB'; z.single = !!z.single;
   return z;
 }
 let zones = store.get('psv.zones', []).map(upgrade);
@@ -96,8 +96,8 @@ function corridorLength() { const v = Geo.toLocal(current.gateA, current.gateB);
 function configs() {
   if (!hasGates()) return [];
   const hA = axisHeading(), hB = (hA + 180) % 360, out = [];
-  if (current.show !== 'B') out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
-  if (current.show !== 'A') out.push({ key: 'B', gate: current.gateB, heading: hB, turn: current.turnB });
+  if (current.single || current.show !== 'B') out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
+  if (!current.single && current.show !== 'A') out.push({ key: 'B', gate: current.gateB, heading: hB, turn: current.turnB });
   return out.map(c => {
     const g = Geo.compute(Object.assign({}, current.params, { heading: c.heading, turn: c.turn }));
     const ll = v => Geo.fromLocal(c.gate, v);
@@ -180,10 +180,12 @@ function draw() {
     return;
   }
   if (!placing) setBanner(null);
+  syncPlaceBtn();
   const p = current.params;
 
   // Couloir A–B + prolongements derrière chaque porte jusqu'au point de snap
-  L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
+  if (current.single) L.polyline([LL(current.gateA), LL(current.gateB)], { color: GATE_COLOR, weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(fig);
+  else L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
   configs().forEach(c => {
     const col = c.colors;
     if (showRec()) L.polyline([LL(c.behind), LL(c.gate)], { color: AXIS_COLOR, weight: 2, dashArray: '8 6', opacity: .9, interactive: false }).addTo(fig);
@@ -306,6 +308,11 @@ function rotateGateIcons() {
   const b = map.getBearing ? map.getBearing() : 0;
   [['A', markerA], ['B', markerB]].forEach(([k, m]) => {
     const el = m && m.getElement && m.getElement(); if (!el) return;
+    const asvg = el.querySelector('.asvg');
+    if (asvg) { // flèche de cap (porte unique)
+      asvg.innerHTML = `<g transform="rotate(${(hasGates() ? axisHeading() : 0) + b})"><circle r="17" fill="rgba(0,0,0,.45)" stroke="#fff" stroke-width="2"/><path d="M0,-12 L9,6 L0,1 L-9,6 Z" fill="${GATE_COLOR}" stroke="#000" stroke-width="1"/></g>`;
+      return;
+    }
     const svg = el.querySelector('.gsvg'); if (!svg) return;
     svg.innerHTML = gateSvg((hasGates() ? headingOf(k) : 0) + b);
   });
@@ -325,7 +332,23 @@ function corridorDrag(m, where) { // where : 'A', 'B' ou 'M' (milieu)
   }, () => { corrVec = null; persist(); redraw(); },
   () => { corrVec = hasGates() ? Geo.toLocal(current.gateA, current.gateB) : null; });
 }
+// Porte unique : la « 2e porte » n'existe pas ; B est la pointe d'une flèche de cap à SINGLE_LEN m devant la porte.
+const SINGLE_LEN = 60;
+function singleTip(a, headingDeg) { const r = headingDeg * Math.PI / 180; return Geo.fromLocal(a, { x: SINGLE_LEN * Math.sin(r), y: SINGLE_LEN * Math.cos(r) }); }
+function arrowIcon() {
+  return L.divIcon({ className: 'sarrow', iconSize: [44, 44], iconAnchor: [22, 22],
+    html: `<svg class="asvg" width="44" height="44" viewBox="-22 -22 44 44"></svg>` });
+}
+function makeArrowMarker() {
+  const m = L.marker(LL(current.gateB), { draggable: false, icon: arrowIcon(), zIndexOffset: 1000 }).addTo(map);
+  longPressDrag(m, ll => { // tourner le cap autour de la porte
+    const v = Geo.toLocal(current.gateA, ll); if (Math.hypot(v.x, v.y) < 3) return;
+    current.gateB = singleTip(current.gateA, Geo.bearingOf(v)); drawLight();
+  }, () => { persist(); redraw(); });
+  return m;
+}
 function makeGateMarker(key) {
+  if (key === 'B' && current.single) return makeArrowMarker();
   const m = L.marker(LL(current['gate' + key]), { draggable: false, icon: gateIcon(gateLabel(key)), zIndexOffset: 1000 }).addTo(map);
   m._psvLabel = gateLabel(key);
   corridorDrag(m, key);
@@ -336,13 +359,15 @@ function corridorMid() { return { lat: (current.gateA.lat + current.gateB.lat) /
 function syncGate(m, key) {
   if (isDragging(m)) return; // le point tenu au doigt est placé par le glissement lui-même
   m.setLatLng(LL(current['gate' + key]));
+  if (key === 'B' && current.single) return;
   const lab = gateLabel(key);
   if (m._psvLabel !== lab) { m.setIcon(gateIcon(lab)); m._psvLabel = lab; }
 }
 function placeGateMarkers() {
   if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else syncGate(markerA, 'A'); }
   if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
-  if (hasGates()) {
+  if (current.single && markerMid) { map.removeLayer(markerMid); markerMid = null; }
+  if (hasGates() && !current.single) {
     if (!markerMid) { markerMid = L.marker(LL(corridorMid()), { draggable: false, icon: midIcon, zIndexOffset: 950 }).addTo(map); corridorDrag(markerMid, 'M'); }
     else if (!isDragging(markerMid)) markerMid.setLatLng(LL(corridorMid()));
   }
@@ -390,9 +415,11 @@ function updateLegend() {
   $('legend').classList.toggle('hidden', !showLabels());
 }
 function updateAxisInfo() {
-  $('axisInfo').textContent = hasGates()
-    ? `Axes de poser : ${hdg(axisHeading())} et ${hdg((axisHeading() + 180) % 360)} · couloir ${Math.round(corridorLength())} m`
-    : 'Portes pas encore placées.';
+  $('axisInfo').textContent = !hasGates() ? 'Portes pas encore placées.'
+    : current.single ? `Porte unique · axe de poser ${hdg(axisHeading())} (${cardOf(axisHeading())}). Pour changer le cap : appui long sur la flèche et tourne, ou saisis-le ci-dessous.`
+    : `Axes de poser : ${hdg(axisHeading())} et ${hdg((axisHeading() + 180) % 360)} · couloir ${Math.round(corridorLength())} m`;
+  $('lenRow').classList.toggle('hidden', !!current.single);
+  $('capLabel').textContent = current.single ? 'Cap du poser (°)' : 'Cap 1re → 2e porte (°)';
   if (hasGates()) {
     if (document.activeElement !== $('c_heading')) $('c_heading').value = Math.round(axisHeading()) % 360;
     if (document.activeElement !== $('c_len')) $('c_len').value = Math.round(corridorLength());
@@ -438,6 +465,7 @@ function syncQuick() {
   const h = k => hasGates() ? cardOf(headingOf(k)) : (k === 'A' ? 'P1' : 'P2');
   const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
+  $('qShowB').classList.toggle('hidden', !!current.single); $('qTurnB').classList.toggle('hidden', !!current.single);
   $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
   $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
   $('qRec').classList.toggle('on', showRec());
@@ -461,7 +489,7 @@ $('qRings').addEventListener('click', () => quick(() => { current.params.rings =
 function setCorridor(headingDeg, lengthM) {
   if (!hasGates()) return toast('Place d\'abord les deux portes');
   const h = ((headingDeg % 360) + 360) % 360 * Math.PI / 180, d = Math.max(1, lengthM);
-  current.gateB = Geo.fromLocal(current.gateA, { x: d * Math.sin(h), y: d * Math.cos(h) });
+  current.gateB = current.single ? singleTip(current.gateA, h * 180 / Math.PI) : Geo.fromLocal(current.gateA, { x: d * Math.sin(h), y: d * Math.cos(h) });
   persist(); redraw();
 }
 document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
@@ -477,15 +505,34 @@ $('c_len').addEventListener('change', e => { const v = numIn(e.target); if (!isN
 
 
 function syncPlaceBtn() {
-  $('btnPlaceA').classList.toggle('on', placing === 'A'); $('btnPlaceB').classList.toggle('on', placing === 'B');
-  const lab = k => hasGates() ? `📍 Porte ${k === 'A' ? 1 : 2} (poser ${cardOf(headingOf(k))})` : `📍 Porte ${k === 'A' ? 1 : 2}`;
+  const two = !current.single;
+  $('btnPlaceA').classList.toggle('on', placing === 'A' || (two && hasGates() && !placing));
+  $('btnPlaceB').classList.toggle('on', placing === 'B' || (two && hasGates() && !placing));
+  $('btnPlaceS').classList.toggle('on', placing === 'S' || (!two && hasGates() && !placing));
+  const lab = k => two && hasGates() ? `📍 Porte ${k === 'A' ? 1 : 2} (${cardOf(headingOf(k))})` : `📍 Porte ${k === 'A' ? 1 : 2}`;
   $('btnPlaceA').textContent = lab('A'); $('btnPlaceB').textContent = lab('B');
+  $('btnPlaceS').textContent = !two && hasGates() ? `📍 Porte unique (${cardOf(axisHeading())})` : '📍 Porte unique';
+  $('placeHint').textContent = two
+    ? 'Touche un bouton puis la carte pour (re)placer cette porte. Pour déplacer tout le couloir sans changer son cap ni sa longueur : appui long sur une porte ou sur le rond au milieu du couloir, puis glisse.'
+    : 'Porte unique : un seul axe de poser. Appui long sur la porte pour la déplacer, sur la flèche pour tourner le cap. « Porte 1 » ou « Porte 2 » repasse en couloir à deux portes.';
 }
-function placeBanner() { setBanner(placing ? `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.` : null); }
-['A', 'B'].forEach(k => $('btnPlace' + k).addEventListener('click', () => {
+function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`); }
+['A', 'B', 'S'].forEach(k => $('btnPlace' + k).addEventListener('click', () => {
   if (placing === k) { placing = null; placeBanner(); syncPlaceBtn(); return; } // 2e appui : annule
+  if (k !== 'S' && current.single) { // retour au couloir à deux portes : la flèche de cap disparaît
+    current.single = false; current.gateB = null; resetGateMarkers(); persist(); redraw();
+  }
   stopMeasure(); placing = k; syncPlaceBtn(); placeBanner(); closeSheet();
 }));
+// Cap obligatoire pour une porte unique
+async function askSingleHeading(def) {
+  for (;;) {
+    const r = await ask('Cap du poser (°, sens de vol au passage de la porte) :', String(Math.round(def) % 360));
+    if (r === null || r === false || r === '') { toast('Cap à régler : appui long sur la flèche, ou onglet Zones'); return def; }
+    const v = parseFloat(String(r).replace(',', '.'));
+    if (!isNaN(v)) return ((v % 360) + 360) % 360;
+  }
+}
 // ---------- Mesure : cap et distance entre deux points touchés (dans l'ordre) ----------
 const measLayer = L.layerGroup().addTo(map);
 const meas = { active: false, a: null, b: null, ma: null, mb: null, line: null, halo: null, lbl: null };
@@ -537,6 +584,13 @@ map.on('click', e => {
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
+  if (placing === 'S') { // porte unique : on pose la porte puis on demande le cap
+    const def = hasGates() ? axisHeading() : ((-(map.getBearing ? map.getBearing() : 0)) % 360 + 360) % 360;
+    current.single = true; current.show = 'AB'; current.gateA = p; current.gateB = singleTip(p, def);
+    placing = null; placeBanner(); resetGateMarkers(); syncPlaceBtn(); persist(); redraw();
+    askSingleHeading(def).then(h => { current.gateB = singleTip(current.gateA, h); persist(); redraw(); fitFigure(); });
+    return;
+  }
   current['gate' + placing] = p;
   const other = placing === 'A' ? 'B' : 'A';
   placing = current['gate' + other] ? null : other; // l'autre porte manque encore : on enchaîne
@@ -713,7 +767,7 @@ async function startNewZone(center, zoom) {
   resetGateMarkers(); stopMeasure();
   map.setView([center.lat, center.lng], current.zoom);
   placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
-  toast(`« ${n} » créée : place la porte 1 puis la porte 2`);
+  toast(`« ${n} » créée : place tes portes (onglet Zones pour une porte unique)`);
 }
 $('btnNewZone').addEventListener('click', () => { $('searchResults').innerHTML = ''; $('nzDlg').classList.remove('hidden'); });
 $('nzCancel').addEventListener('click', () => $('nzDlg').classList.add('hidden'));
@@ -1009,7 +1063,7 @@ async function renderPdfCanvas() {
     g.restore();
   };
 
-  line(current.gateA, current.gateB, AXIS_COLOR, 3.2);
+  if (!current.single) line(current.gateA, current.gateB, AXIS_COLOR, 3.2);
   const cfs = configs();
   cfs.forEach(c => {
     const col = c.colors, p = current.params;
@@ -1040,7 +1094,7 @@ async function renderPdfCanvas() {
     if (showRec()) dot(c.rec, col.rec, 6.5, `Snap ${cfgName(c)}`);
   });
   gateMark('A', `Portes ${cardOf(headingOf('A'))}`);
-  gateMark('B', `Portes ${cardOf(headingOf('B'))}`);
+  if (!current.single) gateMark('B', `Portes ${cardOf(headingOf('B'))}`);
 
   // ---- Flèche du nord (haut droite) ----
   const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)
@@ -1065,7 +1119,7 @@ async function renderPdfCanvas() {
   const p = current.params, t = (+p.t1 || 0) + (+p.t2 || 0), r0 = Math.round;
   const col1 = 30 * u, col2 = W * 0.52, l0 = by + lh * 1.1;
   tx(`${current.name}`, col1, l0, '#fff', fs * 1.3, true);
-  tx(`${new Date().toLocaleDateString('fr-FR')} · couloir ${r0(corridorLength())} m`, col1, l0 + lh * 1.2, '#bbb');
+  tx(`${new Date().toLocaleDateString('fr-FR')} · ${current.single ? 'porte unique' : `couloir ${r0(corridorLength())} m`}`, col1, l0 + lh * 1.2, '#bbb');
   let ly = l0 + lh * 2.4;
   cfs.forEach(c => { tx(`${cfgName(c)} : poser au ${hdg(c.heading)}, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}`, col1, ly, c.colors.setup, fs, true); ly += lh; });
   [

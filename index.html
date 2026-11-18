@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.6.1">
+<link rel="stylesheet" href="style.css?v=3.7.0">
 </head>
 <body>
 <div id="map"></div>
@@ -60,21 +60,22 @@
     <ul id="zoneList"></ul>
 
     <h3>Portes</h3>
-    <div class="row grid2">
+    <div class="row grid3">
       <button id="btnPlaceA" class="wide">📍 Porte 1</button>
       <button id="btnPlaceB" class="wide">📍 Porte 2</button>
+      <button id="btnPlaceS" class="wide">📍 Porte unique</button>
     </div>
-    <p class="hint">Touche un bouton puis la carte pour (re)placer cette porte. Pour déplacer tout le couloir sans changer son cap ni sa longueur : appui long sur une porte ou sur le rond au milieu du couloir, puis glisse.</p>
+    <p class="hint" id="placeHint">Touche un bouton puis la carte pour (re)placer cette porte. Pour déplacer tout le couloir sans changer son cap ni sa longueur : appui long sur une porte ou sur le rond au milieu du couloir, puis glisse.</p>
     <p class="hint" id="axisInfo"></p>
     <div class="row">
-      <label>Cap 1re → 2e porte (°)</label>
+      <label id="capLabel">Cap 1re → 2e porte (°)</label>
       <div class="stepper">
         <button data-rot="-5">−5</button><button data-rot="-1">−1</button>
         <input id="c_heading" inputmode="decimal">
         <button data-rot="1">+1</button><button data-rot="5">+5</button>
       </div>
     </div>
-    <div class="row">
+    <div class="row" id="lenRow">
       <label>Longueur du couloir (m)</label>
       <div class="stepper">
         <button data-len="-5">−5</button><button data-len="-1">−1</button>
@@ -165,9 +166,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.6.1"></script>
-<script src="vendor/leaflet-rotate.js?v=3.6.1"></script>
-<script src="geo.js?v=3.6.1"></script>
-<script src="app.js?v=3.6.1"></script>
+<script src="vendor/leaflet.js?v=3.7.0"></script>
+<script src="vendor/leaflet-rotate.js?v=3.7.0"></script>
+<script src="geo.js?v=3.7.0"></script>
+<script src="app.js?v=3.7.0"></script>
 </body>
 </html>
