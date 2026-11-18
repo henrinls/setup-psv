@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.6.0';
+const VERSION = '3.6.1';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -1102,7 +1102,7 @@ $('pdfClose').addEventListener('click', () => $('pdfReady').classList.add('hidde
 $('pdfShare').addEventListener('click', async () => {
   if (!pdfFile) return;
   try {
-    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) { await navigator.share({ files: [pdfFile], title: pdfFile.name }); }
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) { await navigator.share({ files: [pdfFile] }); /* sans title : iOS en ferait un .txt en plus */ }
     else { const url = URL.createObjectURL(pdfFile); const a = document.createElement('a'); a.href = url; a.download = pdfFile.name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
     $('pdfReady').classList.add('hidden');
   } catch (e) { if (e && e.name !== 'AbortError') toast('Partage impossible'); }
@@ -1116,7 +1116,7 @@ $('btnExport').addEventListener('click', async () => {
   const name = `${dateStamp()}_Setup_PSV_zones.json`;
   const file = new File([data], name, { type: 'application/json' });
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: name });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] }); /* sans title : iOS en ferait un .txt en plus */
     else { const url = URL.createObjectURL(file); const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
   } catch (e) { if (e && e.name !== 'AbortError') toast('Export impossible'); }
 });
