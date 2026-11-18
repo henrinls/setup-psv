@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.9.2';
+const VERSION = '3.9.3';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -96,7 +96,7 @@ function corridorLength() { const v = Geo.toLocal(current.gateA, current.gateB);
 function configs() {
   if (!hasGates()) return [];
   const hA = axisHeading(), hB = (hA + 180) % 360, out = [];
-  if (current.single || current.show !== 'B') out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
+  if (current.single ? current.show !== 'none' : current.show !== 'B') out.push({ key: 'A', gate: current.gateA, heading: hA, turn: current.turnA });
   if (!current.single && current.show !== 'A') out.push({ key: 'B', gate: current.gateB, heading: hB, turn: current.turnB });
   return out.map(c => {
     const g = Geo.compute(Object.assign({}, current.params, { heading: c.heading, turn: c.turn }));
@@ -184,7 +184,7 @@ function draw() {
   const p = current.params;
 
   // Couloir A–B + prolongements derrière chaque porte jusqu'au point de snap
-  if (current.single) L.polyline([LL(current.gateA), LL(current.gateB)], { color: GATE_COLOR, weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(fig);
+  if (current.single) { if (current.show !== 'none') L.polyline([LL(current.gateA), LL(current.gateB)], { color: GATE_COLOR, weight: 2, dashArray: '6 6', opacity: .9, interactive: false }).addTo(fig); }
   else L.polyline([LL(current.gateA), LL(current.gateB)], { color: AXIS_COLOR, weight: 3, opacity: .95, interactive: false }).addTo(fig);
   configs().forEach(c => {
     const col = c.colors;
@@ -400,7 +400,9 @@ function syncGate(m, key) {
 }
 function placeGateMarkers() {
   if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else syncGate(markerA, 'A'); }
-  if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
+  const hideTip = current.single && current.show === 'none';
+  if (hideTip && markerB) { map.removeLayer(markerB); markerB = null; }
+  if (current.gateB && !hideTip) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
   syncCorridorHit();
   rotateGateIcons();
 }
@@ -498,7 +500,7 @@ function syncQuick() {
   const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
   $('qShowB').classList.toggle('hidden', !!current.single); $('qTurnB').classList.toggle('hidden', !!current.single);
-  $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
+  $('qShowA').classList.toggle('on', current.single ? sh !== 'none' : sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
   $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
   $('qRec').classList.toggle('on', showRec());
   $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
@@ -507,6 +509,10 @@ function quick(fn, msg) { fn(); syncQuick(); persist(); redraw(); if (msg) toast
 $('qTurnA').addEventListener('click', () => quick(() => { current.turnA = current.turnA === 'G' ? 'D' : 'G'; }, () => `${cfgNameKey('A')} : virage à ${current.turnA === 'G' ? 'gauche' : 'droite'}`));
 $('qTurnB').addEventListener('click', () => quick(() => { current.turnB = current.turnB === 'G' ? 'D' : 'G'; }, () => `${cfgNameKey('B')} : virage à ${current.turnB === 'G' ? 'gauche' : 'droite'}`));
 function toggleShow(k) {
+  if (current.single) { // porte unique : l'œil masque tout sauf la porte (axe, étape de base, points, cercles)
+    quick(() => { current.show = current.show === 'none' ? 'AB' : 'none'; }, () => current.show === 'none' ? 'Configuration masquée' : 'Configuration affichée');
+    return;
+  }
   const vis = { A: current.show !== 'B', B: current.show !== 'A' };
   vis[k] = !vis[k];
   if (!vis.A && !vis.B) { toast('Il faut au moins une porte affichée'); return; }
@@ -552,7 +558,7 @@ function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche l
 ['A', 'B', 'S'].forEach(k => $('btnPlace' + k).addEventListener('click', () => {
   if (placing === k) { placing = null; placeBanner(); syncPlaceBtn(); return; } // 2e appui : annule
   if (k !== 'S' && current.single) { // retour au couloir à deux portes : la flèche de cap disparaît
-    current.single = false; current.gateB = null; resetGateMarkers(); persist(); redraw();
+    current.single = false; current.gateB = null; current.show = 'AB'; resetGateMarkers(); persist(); redraw();
   }
   stopMeasure(); placing = k; syncPlaceBtn(); placeBanner(); closeSheet();
 }));
