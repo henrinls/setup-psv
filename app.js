@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.8.1';
+const VERSION = '3.9.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -172,7 +172,7 @@ function draw() {
   fig.clearLayers(); grads.clearLayers();
   updateLegend(); updateAxisInfo(); syncQuick();
   if (!hasGates()) {
-    if (!placing && current.gateA) placing = 'B'; // il ne manque que la 2e porte
+    if (!placing && current.gateA) placing = current.single ? 'SD' : 'B'; // il manque la 2e porte, ou la direction de la porte unique
     if (placing) placeBanner();
     else setBanner('Pour commencer : ☰ → ＋ Nouvelle zone.');
     syncPlaceBtn();
@@ -540,7 +540,7 @@ function syncPlaceBtn() {
   const two = !current.single;
   $('btnPlaceA').classList.toggle('on', placing === 'A' || (two && hasGates() && !placing));
   $('btnPlaceB').classList.toggle('on', placing === 'B' || (two && hasGates() && !placing));
-  $('btnPlaceS').classList.toggle('on', placing === 'S' || (!two && hasGates() && !placing));
+  $('btnPlaceS').classList.toggle('on', placing === 'S' || placing === 'SD' || (!two && hasGates() && !placing));
   const lab = k => two && hasGates() ? `📍 Porte ${k === 'A' ? 1 : 2} (${cardOf(headingOf(k))})` : `📍 Porte ${k === 'A' ? 1 : 2}`;
   $('btnPlaceA').textContent = lab('A'); $('btnPlaceB').textContent = lab('B');
   $('btnPlaceS').textContent = !two && hasGates() ? `📍 Porte unique (${cardOf(axisHeading())})` : '📍 Porte unique';
@@ -548,7 +548,7 @@ function syncPlaceBtn() {
     ? 'Touche un bouton puis la carte pour (re)placer cette porte. Appui long sur une porte pour déplacer cette porte seule ; appui long sur le trait blanc entre les portes pour déplacer tout le couloir (cap et longueur conservés).'
     : 'Porte unique : un seul axe de poser. Appui long sur la porte pour la déplacer, sur la flèche pour tourner le cap. « Porte 1 » ou « Porte 2 » repasse en couloir à deux portes.';
 }
-function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`); }
+function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : placing === 'SD' ? 'Touche la carte dans la direction du poser (n\'importe quelle distance).' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`); }
 ['A', 'B', 'S'].forEach(k => $('btnPlace' + k).addEventListener('click', () => {
   if (placing === k) { placing = null; placeBanner(); syncPlaceBtn(); return; } // 2e appui : annule
   if (k !== 'S' && current.single) { // retour au couloir à deux portes : la flèche de cap disparaît
@@ -556,15 +556,6 @@ function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche l
   }
   stopMeasure(); placing = k; syncPlaceBtn(); placeBanner(); closeSheet();
 }));
-// Cap obligatoire pour une porte unique
-async function askSingleHeading(def) {
-  for (;;) {
-    const r = await ask('Cap du poser (°, sens de vol au passage de la porte) :', String(Math.round(def) % 360));
-    if (r === null || r === false || r === '') { toast('Cap à régler : appui long sur la flèche, ou onglet Zones'); return def; }
-    const v = parseFloat(String(r).replace(',', '.'));
-    if (!isNaN(v)) return ((v % 360) + 360) % 360;
-  }
-}
 // ---------- Mesure : cap et distance entre deux points touchés (dans l'ordre) ----------
 const measLayer = L.layerGroup().addTo(map);
 const meas = { active: false, a: null, b: null, ma: null, mb: null, line: null, halo: null, lbl: null };
@@ -617,10 +608,16 @@ map.on('click', e => {
   if (!placing) return;
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
   if (placing === 'S') { // porte unique : on pose la porte puis on demande le cap
-    const def = hasGates() ? axisHeading() : ((-(map.getBearing ? map.getBearing() : 0)) % 360 + 360) % 360;
-    current.single = true; current.show = 'AB'; current.gateA = p; current.gateB = singleTip(p, def);
-    placing = null; placeBanner(); resetGateMarkers(); syncPlaceBtn(); persist(); redraw();
-    askSingleHeading(def).then(h => { current.gateB = singleTip(current.gateA, h); persist(); redraw(); fitFigure(); });
+    current.single = true; current.show = 'AB'; current.gateA = p; current.gateB = null;
+    placing = 'SD'; placeBanner(); resetGateMarkers(); syncPlaceBtn(); persist(); redraw();
+    return;
+  }
+  if (placing === 'SD') { // 2e appui : la direction porte → point touché donne l'axe de poser (distance indifférente)
+    const v = Geo.toLocal(current.gateA, p);
+    if (Math.hypot(v.x, v.y) < 1) return;
+    current.gateB = singleTip(current.gateA, Geo.bearingOf(v));
+    placing = null; placeBanner(); resetGateMarkers(); syncPlaceBtn(); persist(); redraw(); fitFigure();
+    toast(`Axe de poser ${hdg(axisHeading())} (${cardOf(axisHeading())}). Appui long sur la flèche pour l'ajuster.`);
     return;
   }
   current['gate' + placing] = p;
