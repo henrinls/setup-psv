@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.7.0">
+<link rel="stylesheet" href="style.css?v=3.8.0">
 </head>
 <body>
 <div id="map"></div>
@@ -65,7 +65,7 @@
       <button id="btnPlaceB" class="wide">📍 Porte 2</button>
       <button id="btnPlaceS" class="wide">📍 Porte unique</button>
     </div>
-    <p class="hint" id="placeHint">Touche un bouton puis la carte pour (re)placer cette porte. Pour déplacer tout le couloir sans changer son cap ni sa longueur : appui long sur une porte ou sur le rond au milieu du couloir, puis glisse.</p>
+    <p class="hint" id="placeHint">Touche un bouton puis la carte pour (re)placer cette porte. Appui long sur une porte pour déplacer cette porte seule ; appui long sur le trait blanc entre les portes pour déplacer tout le couloir (cap et longueur conservés).</p>
     <p class="hint" id="axisInfo"></p>
     <div class="row">
       <label id="capLabel">Cap 1re → 2e porte (°)</label>
@@ -166,9 +166,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.7.0"></script>
-<script src="vendor/leaflet-rotate.js?v=3.7.0"></script>
-<script src="geo.js?v=3.7.0"></script>
-<script src="app.js?v=3.7.0"></script>
+<script src="vendor/leaflet.js?v=3.8.0"></script>
+<script src="vendor/leaflet-rotate.js?v=3.8.0"></script>
+<script src="geo.js?v=3.8.0"></script>
+<script src="app.js?v=3.8.0"></script>
 </body>
 </html>

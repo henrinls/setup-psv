@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.7.0';
+const VERSION = '3.8.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -301,7 +301,7 @@ function gateSvg(theta) { // theta : angle à l'écran du sens du poser (0 = hau
     ${ends.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.5" fill="#fff" stroke="#111"/>`).join('')}`;
 }
 function gateIcon(label) {
-  return L.divIcon({ className: 'gate', iconSize: [60, 60], iconAnchor: [30, 30],
+  return L.divIcon({ className: 'gate', iconSize: [34, 34], iconAnchor: [17, 17],
     html: `<svg class="gsvg" width="60" height="60" viewBox="-30 -30 60 60"></svg>${label ? `<b style="color:${GATE_COLOR}">${label}</b>` : ''}` });
 }
 function rotateGateIcons() {
@@ -347,13 +347,48 @@ function makeArrowMarker() {
   }, () => { persist(); redraw(); });
   return m;
 }
+// Appui long sur une porte : on ne déplace QUE cette porte (le cap et la longueur du couloir suivent).
+// En porte unique, la porte emmène sa flèche de cap avec elle.
 function makeGateMarker(key) {
   if (key === 'B' && current.single) return makeArrowMarker();
   const m = L.marker(LL(current['gate' + key]), { draggable: false, icon: gateIcon(gateLabel(key)), zIndexOffset: 1000 }).addTo(map);
   m._psvLabel = gateLabel(key);
-  corridorDrag(m, key);
+  let vec = null;
+  longPressDrag(m, ll => {
+    if (current.single && vec) { current.gateA = ll; current.gateB = Geo.fromLocal(ll, vec); }
+    else current['gate' + key] = ll;
+    drawLight();
+  }, () => { vec = null; persist(); redraw(); },
+  () => { vec = current.single && hasGates() ? Geo.toLocal(current.gateA, current.gateB) : null; });
   return m;
 }
+// Appui long sur le trait blanc du couloir : on déplace tout le couloir (portes comprises), cap et longueur conservés.
+let corrHit = null;
+function corridorHit() {
+  if (corrHit) return corrHit;
+  const line = L.polyline([[0, 0], [0, 0]], { color: '#fff', weight: 30, opacity: 0, interactive: true, bubblingMouseEvents: true });
+  const handle = { line, _lpDragging: false, getElement: () => line._path, setLatLng: () => {} };
+  let ref = null, a0 = null, b0 = null;
+  corrHit = { line, handle, attached: false };
+  corrHit.attach = () => {
+    if (corrHit.attached || !line._path) return; corrHit.attached = true;
+    longPressDrag(handle, ll => {
+      if (!ref) { ref = ll; a0 = current.gateA; b0 = current.gateB; return; }
+      const d = Geo.toLocal(ref, ll);
+      current.gateA = Geo.fromLocal(a0, d); current.gateB = Geo.fromLocal(b0, d); drawLight();
+    }, () => { ref = null; persist(); redraw(); }, () => { ref = null; });
+  };
+  return corrHit;
+}
+function syncCorridorHit() {
+  const h = corridorHit();
+  if (hasGates() && !current.single) {
+    if (!handleDragging()) h.line.setLatLngs([LL(current.gateA), LL(current.gateB)]);
+    if (!map.hasLayer(h.line)) h.line.addTo(map);
+    h.attach();
+  } else if (map.hasLayer(h.line)) map.removeLayer(h.line);
+}
+const handleDragging = () => !!(corrHit && corrHit.handle._lpDragging);
 const midIcon = L.divIcon({ className: 'corrmid', iconSize: [38, 38], iconAnchor: [19, 19], html: '<span></span>' });
 function corridorMid() { return { lat: (current.gateA.lat + current.gateB.lat) / 2, lng: (current.gateA.lng + current.gateB.lng) / 2 }; }
 function syncGate(m, key) {
@@ -366,16 +401,13 @@ function syncGate(m, key) {
 function placeGateMarkers() {
   if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else syncGate(markerA, 'A'); }
   if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
-  if (current.single && markerMid) { map.removeLayer(markerMid); markerMid = null; }
-  if (hasGates() && !current.single) {
-    if (!markerMid) { markerMid = L.marker(LL(corridorMid()), { draggable: false, icon: midIcon, zIndexOffset: 950 }).addTo(map); corridorDrag(markerMid, 'M'); }
-    else if (!isDragging(markerMid)) markerMid.setLatLng(LL(corridorMid()));
-  }
+  syncCorridorHit();
   rotateGateIcons();
 }
 function resetGateMarkers() {
   [markerA, markerB, markerMid].forEach(m => m && map.removeLayer(m));
   markerA = markerB = markerMid = null;
+  if (corrHit && map.hasLayer(corrHit.line)) map.removeLayer(corrHit.line);
 }
 
 // Cadre la figure dans la partie libre de l'écran (hors barre du haut, boutons de gauche, zoom),
@@ -513,7 +545,7 @@ function syncPlaceBtn() {
   $('btnPlaceA').textContent = lab('A'); $('btnPlaceB').textContent = lab('B');
   $('btnPlaceS').textContent = !two && hasGates() ? `📍 Porte unique (${cardOf(axisHeading())})` : '📍 Porte unique';
   $('placeHint').textContent = two
-    ? 'Touche un bouton puis la carte pour (re)placer cette porte. Pour déplacer tout le couloir sans changer son cap ni sa longueur : appui long sur une porte ou sur le rond au milieu du couloir, puis glisse.'
+    ? 'Touche un bouton puis la carte pour (re)placer cette porte. Appui long sur une porte pour déplacer cette porte seule ; appui long sur le trait blanc entre les portes pour déplacer tout le couloir (cap et longueur conservés).'
     : 'Porte unique : un seul axe de poser. Appui long sur la porte pour la déplacer, sur la flèche pour tourner le cap. « Porte 1 » ou « Porte 2 » repasse en couloir à deux portes.';
 }
 function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`); }
@@ -595,7 +627,7 @@ map.on('click', e => {
   const other = placing === 'A' ? 'B' : 'A';
   placing = current['gate' + other] ? null : other; // l'autre porte manque encore : on enchaîne
   placeBanner();
-  if (!placing) toast('Couloir placé. Appui long sur une porte ou le milieu pour le déplacer en entier.');
+  if (!placing) toast('Couloir placé. Appui long : sur une porte pour la déplacer, sur le trait blanc pour déplacer le couloir.');
   syncPlaceBtn(); persist(); redraw();
 });
 map.on('zoomend', redraw);
