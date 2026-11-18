@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.0.1';
+const VERSION = '3.1.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -169,7 +169,7 @@ function draw() {
   if (!hasGates()) {
     if (!placing && current.gateA) placing = 'B'; // il ne manque que la 2e porte
     if (placing) placeBanner();
-    else setBanner('Pour commencer : onglet Zones (☰) → ＋ Nouvelle zone.');
+    else setBanner('Pour commencer : ☰ → ＋ Nouvelle zone.');
     syncPlaceBtn();
     if (current.gateA) placeGateMarkers();
     return;
@@ -588,17 +588,17 @@ function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', 
   g.addEventListener('mousedown', e => start(e.clientY));
   window.addEventListener('mouseup', e => end(e.clientY));
 })();
-let lastTab = 'zones';
+let lastTab = 'reglages';
 function openSheet(tab) {
   lastTab = tab;
   $('sheet').classList.remove('hidden'); setSheetSize(sheetSize);
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  ['reglages', 'pilote', 'zones'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
-  if (tab === 'zones') renderZones();
+  ['reglages', 'pilote'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
+  if (tab === 'reglages') renderZones();
 }
 function closeSheet() { $('sheet').classList.add('hidden'); }
 $('btnSettings').addEventListener('click', () => $('sheet').classList.contains('hidden') ? openSheet(lastTab) : closeSheet());
-$('btnZones').addEventListener('click', () => openSheet('zones'));
+$('btnZones').addEventListener('click', () => openSheet('reglages'));
 $('btnClose').addEventListener('click', closeSheet);
 document.querySelectorAll('.tabs [data-tab]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.tab)));
 
@@ -660,7 +660,7 @@ function startNewZone(center, zoom) {
   resetGateMarkers(); stopMeasure();
   map.setView([center.lat, center.lng], current.zoom);
   placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
-  toast('Place la porte 1, puis la porte 2, puis « Enregistrer la zone » dans l\'onglet Portes');
+  toast('Place la porte 1, puis la porte 2, puis 💾 Enregistrer (☰)');
 }
 $('btnNewZone').addEventListener('click', () => { $('searchResults').innerHTML = ''; $('nzDlg').classList.remove('hidden'); });
 $('nzCancel').addEventListener('click', () => $('nzDlg').classList.add('hidden'));

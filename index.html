@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.0.1">
+<link rel="stylesheet" href="style.css?v=3.1.0">
 </head>
 <body>
 <div id="map"></div>
@@ -47,13 +47,13 @@
   <div class="grab" id="grab"><span></span></div>
   <div class="tabs">
     <button data-tab="pilote">Manœuvre</button>
-    <button data-tab="zones" class="on">Zones</button>
-    <button data-tab="reglages">Portes</button>
+    <button data-tab="reglages" class="on">Zone</button>
     <button id="btnClose" class="close">✕</button>
   </div>
 
   <div id="tab-reglages" class="tab hidden">
-    <h3>Couloir et portes</h3>
+    <div class="row"><button id="btnNewZone" class="wide">＋ Nouvelle zone</button></div>
+    <h3>Portes</h3>
     <div class="row grid2">
       <button id="btnPlaceA" class="wide">📍 Porte 1</button>
       <button id="btnPlaceB" class="wide">📍 Porte 2</button>
@@ -82,7 +82,21 @@
       <button id="btnSaveZone" class="wide primary">💾 Enregistrer</button>
       <button id="btnPdf" class="wide primary">📄 PDF A4</button>
     </div>
-    <p class="hint">Toujours en paysage. La page est tournée pour que l'étape de base monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
+    <p class="hint">PDF A4 paysage, étape de base vers le haut, nord dans un coin, tel qu'affiché.</p>
+    <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour du couloir)</button></div>
+    <div id="offlineStatus" class="hint"></div>
+
+    <h3>Mes zones</h3>
+    <ul id="zoneList"></ul>
+
+    <h3>Sauvegarde</h3>
+    <div class="row grid2">
+      <button id="btnExport" class="wide">⬆︎ Exporter (fichier)</button>
+      <button id="btnImport" class="wide">⬇︎ Importer (fichier)</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" class="hidden">
+    <div class="row"><button id="btnWipe" class="wide danger">🗑 Effacer toutes les données</button></div>
+    <p class="hint">Exporter crée un fichier avec toutes tes zones et ta manœuvre (à garder dans Fichiers, envoyer par AirDrop ou mail…). Importer ajoute les zones d'un tel fichier à celles déjà enregistrées, sans rien effacer. Version <span id="ver"></span></p>  
   </div>
 
   <div id="tab-pilote" class="tab hidden">
@@ -116,24 +130,6 @@
 
   </div>
 
-  <div id="tab-zones" class="tab hidden">
-    <h3>Zone actuelle</h3>
-    <div class="row"><button id="btnNewZone" class="wide">＋ Nouvelle zone</button></div>
-    <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour du couloir)</button></div>
-    <div id="offlineStatus" class="hint"></div>
-
-    <h3>Mes zones</h3>
-    <ul id="zoneList"></ul>
-
-    <h3>Sauvegarde</h3>
-    <div class="row grid2">
-      <button id="btnExport" class="wide">⬆︎ Exporter (fichier)</button>
-      <button id="btnImport" class="wide">⬇︎ Importer (fichier)</button>
-    </div>
-    <input type="file" id="importFile" accept=".json,application/json" class="hidden">
-    <div class="row"><button id="btnWipe" class="wide danger">🗑 Effacer toutes les données</button></div>
-    <p class="hint">Exporter crée un fichier avec toutes tes zones et ta manœuvre (à garder dans Fichiers, envoyer par AirDrop ou mail…). Importer ajoute les zones d'un tel fichier à celles déjà enregistrées, sans rien effacer. Version <span id="ver"></span></p>
-  </div>
 </section>
 
 <div id="dialog" class="hidden">
@@ -163,9 +159,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.0.1"></script>
-<script src="vendor/leaflet-rotate.js?v=3.0.1"></script>
-<script src="geo.js?v=3.0.1"></script>
-<script src="app.js?v=3.0.1"></script>
+<script src="vendor/leaflet.js?v=3.1.0"></script>
+<script src="vendor/leaflet-rotate.js?v=3.1.0"></script>
+<script src="geo.js?v=3.1.0"></script>
+<script src="app.js?v=3.1.0"></script>
 </body>
 </html>
