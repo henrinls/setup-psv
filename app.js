@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = '2.3.1';
+const VERSION = '2.4.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -450,21 +450,23 @@ function locate(center) {
   }, () => { if (center) toast('Position refusée ou indisponible'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 }
 $('btnLocate').addEventListener('click', () => locate(true));
-// Appuis successifs : nord en haut → branche de la 1re config vers le haut → branche de la 2e (si cap différent) → nord…
+// Boussole : nord en haut. Bouton « Axe » : branche d'approche vers le haut (sens de vol vers le setup) ;
+// si les deux branches ont des caps différents, chaque appui passe à l'autre.
 // leaflet-rotate : setBearing(b) tourne la carte de +b, donc le cap h est en haut avec b = -h.
-$('btnNorth').addEventListener('click', () => {
-  const norm = x => ((x % 360) + 360) % 360, diff = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
-  const targets = [{ b: 0, msg: 'Nord en haut' }];
+const normB = x => ((x % 360) + 360) % 360, diffB = (x, y) => Math.abs(((x - y + 540) % 360) - 180);
+function setMapBearing(b, msg) { map.setBearing(b); current.bearing = b; syncCompass(); persist(); if (msg) toast(msg); }
+$('btnNorth').addEventListener('click', () => setMapBearing(0, 'Nord en haut'));
+$('btnAxisUp').addEventListener('click', () => {
+  const targets = [];
   configs().forEach(c => {
-    const b = norm(-c.geo.legHeading);
-    const same = targets.find(t => diff(t.b, b) < 3), m = `Branche ${cfgName(c)} vers le haut`;
+    const b = normB(-c.geo.legHeading), m = `Branche ${cfgName(c)} vers le haut`;
+    const same = targets.find(t => diffB(t.b, b) < 3);
     if (same) same.msg += ' · ' + m; else targets.push({ b, msg: m });
   });
-  const cur = norm(map.getBearing()), i = targets.findIndex(t => diff(t.b, cur) < 2);
-  const next = i < 0 ? targets[0] : targets[(i + 1) % targets.length];
-  map.setBearing(next.b); // sans animation : plus fiable sur iPhone
-  current.bearing = next.b; syncCompass(); persist();
-  toast(targets.length === 1 && i === 0 ? 'Branche déjà vers le haut avec le nord en haut' : next.msg);
+  if (!targets.length) return toast('Place d\'abord les portes');
+  const i = targets.findIndex(t => diffB(t.b, normB(map.getBearing())) < 2);
+  const next = targets[(i + 1) % targets.length]; // pas encore orienté (i = -1) → 1re branche
+  setMapBearing(next.b, next.msg);
 });
 $('btnFit').addEventListener('click', () => { if (hasGates()) fitFigure(); else toast('Place d\'abord les portes'); });
 
@@ -767,4 +769,12 @@ fillInputs();
 if (hasGates()) fitFigure();
 redraw();
 if (!current.gateA && !current.id && current.zoom < 10) locate(true); else locate(false);
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// Mise à jour automatique : vérifie une nouvelle version à chaque retour sur l'appli et recharge dès qu'elle est installée
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloading) { reloading = true; location.reload(); } });
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
