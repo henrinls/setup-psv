@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.11.0';
+const VERSION = '2.12.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -46,9 +46,11 @@ store.set('psv.zones', zones);
 // ---------- Profil pilote : réglages communs à toutes les zones ----------
 // Temps du virage, déports du setup et du point de snap, vent de référence : c'est la façon de tourner
 // d'Henri, pas une propriété de la zone. Une modification se répercute sur toutes les zones enregistrées.
-const PROFILE_KEYS = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref'];
+const PROFILE_KEYS = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legHeight']; // + étape de base
 let profile = store.get('psv.profile', null);
-if (!profile) { profile = {}; PROFILE_KEYS.forEach(k => profile[k] = current.params[k]); store.set('psv.profile', profile); }
+if (!profile) profile = {};
+PROFILE_KEYS.forEach(k => { if (profile[k] === undefined) profile[k] = current.params[k]; }); // complète un profil plus ancien
+store.set('psv.profile', profile);
 function applyProfile(z) { if (z && z.params) PROFILE_KEYS.forEach(k => { z.params[k] = profile[k]; }); }
 applyProfile(current); zones.forEach(applyProfile); store.set('psv.zones', zones);
 
@@ -184,7 +186,7 @@ function draw() {
     L.polyline(arrowAt(c.gate, tip, 1, Math.max(len * 0.3, 4)), { color: GATE_COLOR, weight: 3, interactive: false }).addTo(fig);
     void other;
 
-    // Branche d'approche
+    // Étape de base (branche d'approche avant le setup)
     if ((+p.legLen || 0) > 0) {
       L.polyline([LL(c.legStart), LL(c.setup)], { color: '#fff', weight: 6, opacity: .75, interactive: false }).addTo(fig);
       L.polyline([LL(c.legStart), LL(c.setup)], { color: col.leg, weight: 3, interactive: false }).addTo(fig);
@@ -203,7 +205,7 @@ function draw() {
   placeGateMarkers();
 }
 
-function legLine1(c) { const p = current.params; return `Branche ${cfgName(c)} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
+function legLine1(c) { const p = current.params; return `Base ${cfgName(c)} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
 function legLine2(c) { const p = current.params; return `cap ${Math.round(c.geo.legHeading)}°` + (+p.legHeight ? ` · début à ${p.legHeight} m` : ''); }
 
 function drawWindCircle(center, radius, color) {
@@ -684,7 +686,7 @@ $('btnNorth').addEventListener('click', () => setMapBearing(0, 'Nord en haut'));
 $('btnAxisUp').addEventListener('click', () => {
   const targets = [];
   configs().forEach(c => {
-    const b = normB(-c.geo.legHeading), m = `Branche ${cfgName(c)} vers le haut`;
+    const b = normB(-c.geo.legHeading), m = `Étape de base ${cfgName(c)} vers le haut`;
     const same = targets.find(t => diffB(t.b, b) < 3);
     if (same) same.msg += ' · ' + m; else targets.push({ b, msg: m });
   });
@@ -947,7 +949,7 @@ async function renderPdfCanvas() {
     `Abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
     `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral`,
     `Point de snap : ${p.recBack} m arrière`,
-    `Branche : ${p.legLen} m · ${p.legTime} s · début à ${p.legHeight} m`,
+    `Étape de base : ${p.legLen} m · ${p.legTime} s · début à ${p.legHeight} m`,
     `Cercles ${p.vref} m/s : setup ${r0(p.vref * t)} m · snap ${r0(p.vref * p.t2)} m`
   ].forEach((s2, i) => tx(s2, col2, l0 + i * lh, '#eee'));
   tx(`Imagerie © Esri, Maxar, Earthstar Geographics · Setup PSV v${VERSION}`, W - 20 * u, H - 10 * u, '#888', 8, false, 'right');

@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=2.11.0">
+<link rel="stylesheet" href="style.css?v=2.12.0">
 </head>
 <body>
 <div id="map"></div>
@@ -21,7 +21,7 @@
   <button id="btnZones" class="pill" title="Zones">☰ <span id="zoneName">Nouvelle zone</span></button>
   <div class="spacer"></div>
   <button id="btnNorth" class="round" title="Nord en haut"><span id="compassNeedle">▲<small>N</small></span></button>
-  <button id="btnAxisUp" class="round" title="Branche d'approche vers le haut"><span class="axisIco">↑<small>AXE</small></span></button>
+  <button id="btnAxisUp" class="round" title="Étape de base vers le haut"><span class="axisIco">↑<small>AXE</small></span></button>
   <button id="btnFit" class="round" title="Voir toute la figure">⤢</button>
   <button id="btnLocate" class="round" title="Ma position">⌖</button>
   <button id="btnSettings" class="round" title="Réglages">⚙</button>
@@ -73,17 +73,9 @@
       </div>
     </div>
 
-    <h3>Branche d'approche avant setup</h3>
-    <div class="grid2">
-      <div><label>Longueur (m)</label><input id="p_legLen" inputmode="decimal"></div>
-      <div><label>Durée sur la branche (s)</label><input id="p_legTime" inputmode="decimal"></div>
-      <div><label>Hauteur au début (m)</label><input id="p_legHeight" inputmode="decimal"></div>
-    </div>
-    <p class="hint">Perpendiculaire à l'axe, venant de l'extérieur et dirigée vers l'axe ; elle finit au point de setup.</p>
-
     <h3>Export</h3>
     <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4 paysage)</button></div>
-    <p class="hint">Toujours en paysage. La page est tournée pour que la branche d'approche monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
+    <p class="hint">Toujours en paysage. La page est tournée pour que l'étape de base monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
   </div>
 
   <div id="tab-pilote" class="tab hidden">
@@ -106,6 +98,14 @@
       <div><label>Déport arrière (m)</label><input id="p_recBack" inputmode="decimal"></div>
       <div><label>Vent de référence des cercles (m/s)</label><input id="p_vref" inputmode="decimal"></div>
     </div>
+
+    <h3>Étape de base (avant le setup)</h3>
+    <div class="grid2">
+      <div><label>Longueur (m)</label><input id="p_legLen" inputmode="decimal"></div>
+      <div><label>Durée sur l'étape de base (s)</label><input id="p_legTime" inputmode="decimal"></div>
+      <div><label>Hauteur au début (m)</label><input id="p_legHeight" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Perpendiculaire à l'axe de poser, venant de l'extérieur et dirigée vers l'axe ; elle finit au point de setup.</p>
 
   </div>
 
@@ -156,9 +156,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=2.11.0"></script>
-<script src="vendor/leaflet-rotate.js?v=2.11.0"></script>
-<script src="geo.js?v=2.11.0"></script>
-<script src="app.js?v=2.11.0"></script>
+<script src="vendor/leaflet.js?v=2.12.0"></script>
+<script src="vendor/leaflet-rotate.js?v=2.12.0"></script>
+<script src="geo.js?v=2.12.0"></script>
+<script src="app.js?v=2.12.0"></script>
 </body>
 </html>
