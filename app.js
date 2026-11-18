@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -112,7 +112,7 @@ map.on('moveend', () => { current.center = map.getCenter(); current.zoom = map.g
 // Boussole : indique le nord quand la carte est tournée ; un appui remet le nord en haut
 function syncCompass() {
   const b = map.getBearing ? map.getBearing() : 0;
-  $('compassNeedle').style.transform = `rotate(${-b}deg)`;
+  $('compassNeedle').style.transform = `rotate(${b}deg)`; // la carte tourne de +b : le nord aussi
   $('btnNorth').classList.toggle('rotated', Math.abs(((b % 360) + 360) % 360) > 0.5);
 }
 let rotT = 0;
@@ -450,7 +450,21 @@ function locate(center) {
   }, () => { if (center) toast('Position refusée ou indisponible'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 }
 $('btnLocate').addEventListener('click', () => locate(true));
-$('btnNorth').addEventListener('click', () => { map.setBearing(0); current.bearing = 0; persist(); });
+// Appuis successifs : nord en haut → branche de la 1re config vers le haut → branche de la 2e (si cap différent) → nord…
+// leaflet-rotate : setBearing(b) tourne la carte de +b, donc le cap h est en haut avec b = -h.
+$('btnNorth').addEventListener('click', () => {
+  const norm = a => ((a % 360) + 360) % 360, diff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+  const targets = [{ b: 0, msg: 'Nord en haut' }];
+  configs().forEach(c => {
+    const b = norm(-c.geo.legHeading);
+    const same = targets.find(t => diff(t.b, b) < 1), m = `Branche ${cfgName(c)} vers le haut`;
+    if (same) same.msg += ' · ' + m; else targets.push({ b, msg: m });
+  });
+  const cur = norm(map.getBearing()), i = targets.findIndex(t => diff(t.b, cur) < 1);
+  const next = i < 0 ? targets[0] : targets[(i + 1) % targets.length];
+  map.setBearing(next.b, { animate: true, duration: 0.4 });
+  current.bearing = next.b; persist(); toast(next.msg);
+});
 $('btnFit').addEventListener('click', () => { if (hasGates()) fitFigure(); else toast('Place d\'abord les portes'); });
 
 // ---------- Images satellite (cache commun carte / hors-ligne / PDF) ----------
@@ -511,11 +525,11 @@ function loadJsPdf() {
 function dateStamp() { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; }
 function safeName(s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'zone'; }
 
-// Cap (°) vers lequel la page est tournée : la branche d'approche « monte » vers le haut de la page.
-// Côté extérieur de la configuration A si elle est affichée, sinon de la B.
+// Cap (°) placé en haut de la page : le sens de vol sur la branche d'approche, vers le setup
+// (on « monte » vers le setup puis l'axe de poser). 1re configuration affichée.
 function pdfUpBearing() {
   const c = configs()[0];
-  return c ? (c.geo.legHeading + 180) % 360 : 0;
+  return c ? c.geo.legHeading : 0;
 }
 
 async function renderPdfCanvas() {
