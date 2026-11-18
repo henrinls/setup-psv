@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.12.0';
+const VERSION = '3.0.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -63,7 +63,7 @@ function newZone(center) {
   });
 }
 function persist() {
-  current.center = map.getCenter(); current.zoom = map.getZoom();
+  current.center = map.getCenter(); current.zoom = map.getZoom(); current.updated = Date.now();
   store.set('psv.current', current);
   store.set('psv.lastParams', current.params);
   if (current.id) {
@@ -75,8 +75,10 @@ function persist() {
 // Noms affichés : cap de l'axe de poser sur 3 chiffres + G/D (jamais A/B à l'écran)
 const hdg = h => String(Math.round(h) % 360).padStart(3, '0') + '°';
 function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h + 180) % 360; }
-function cfgName(c) { return `${hdg(c.heading)} ${c.turn}`; }
-function cfgNameKey(key) { return hasGates() ? `${hdg(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? '1re porte' : '2e porte'); }
+// Nom d'un sens de poser : point cardinal le plus proche ; pile entre deux (45°, 135°…) → N ou S par convention
+function cardOf(h) { h = ((h % 360) + 360) % 360; if (h >= 315 || h <= 45) return 'N'; if (h >= 135 && h <= 225) return 'S'; return h < 180 ? 'E' : 'O'; }
+function cfgName(c) { return `${cardOf(c.heading)} ${c.turn}`; }
+function cfgNameKey(key) { return hasGates() ? `${cardOf(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? 'porte 1' : 'porte 2'); }
 const showLabels = () => false; // textes sur les éléments : jamais affichés (demande d'Henri)
 const showRec = () => current.params.rec !== false; // point de snap + son cercle (le temps de recouvrement = du point de snap aux portes)
 
@@ -165,8 +167,9 @@ function draw() {
   fig.clearLayers(); grads.clearLayers();
   updateLegend(); updateAxisInfo(); syncQuick();
   if (!hasGates()) {
-    if (!placing) placing = current.gateA ? 'B' : 'A';
-    setBanner(placing === 'A' ? 'Touche la carte au début du couloir (1re porte).' : 'Touche maintenant l\'autre bout du couloir (2e porte).');
+    if (!placing && current.gateA) placing = 'B'; // il ne manque que la 2e porte
+    if (placing) placeBanner();
+    else setBanner('Pour commencer : onglet Zones (☰) → ＋ Nouvelle zone.');
     syncPlaceBtn();
     if (current.gateA) placeGateMarkers();
     return;
@@ -236,7 +239,7 @@ const isDragging = m => !!(m && (m._lpDragging || (m.dragging && m.dragging._dra
 // Un glissement immédiat déplace la carte ; il faut rester appuyé HOLD_MS sans bouger pour « soulever » le point.
 const HOLD_MS = 450, MOVE_TOL = 10;
 let suppressClickUntil = 0;
-function longPressDrag(marker, onMove, onEnd) {
+function longPressDrag(marker, onMove, onEnd, onStart) {
   const el = marker.getElement(); if (!el) return;
   let timer = null, start = null;
   const pt = e => (e.touches ? (e.touches[0] || e.changedTouches[0]) : e);
@@ -249,7 +252,7 @@ function longPressDrag(marker, onMove, onEnd) {
     const p = pt(e); start = { x: p.clientX, y: p.clientY };
     clearTimeout(timer);
     timer = setTimeout(() => {
-      timer = null; marker._lpDragging = true;
+      timer = null; marker._lpDragging = true; if (onStart) onStart();
       const d = map.dragging && map.dragging._draggable; if (d) d.finishDrag(true); // stoppe le déplacement de carte commencé
       map.dragging.disable(); el.classList.add('lifting');
       if (navigator.vibrate) try { navigator.vibrate(25); } catch (er) {}
@@ -302,15 +305,31 @@ function rotateGateIcons() {
     svg.innerHTML = gateSvg((hasGates() ? headingOf(k) : 0) + b);
   });
 }
-function gateLabel(key) { return showLabels() && hasGates() ? `Portes ${hdg(headingOf(key))}` : ''; }
+function gateLabel(key) { return showLabels() && hasGates() ? `Portes ${cardOf(headingOf(key))}` : ''; }
+// Glisser une porte ou le rond du milieu déplace TOUT le couloir : cap et longueur conservés.
+// (Pour changer une seule porte : boutons « Porte 1 / Porte 2 » de l'onglet Portes.)
+let corrVec = null, markerMid = null;
+function corridorDrag(m, where) { // where : 'A', 'B' ou 'M' (milieu)
+  longPressDrag(m, ll => {
+    if (!corrVec) return;
+    const v = corrVec;
+    if (where === 'A') { current.gateA = ll; current.gateB = Geo.fromLocal(ll, v); }
+    else if (where === 'B') { current.gateB = ll; current.gateA = Geo.fromLocal(ll, { x: -v.x, y: -v.y }); }
+    else { current.gateA = Geo.fromLocal(ll, { x: -v.x / 2, y: -v.y / 2 }); current.gateB = Geo.fromLocal(ll, { x: v.x / 2, y: v.y / 2 }); }
+    drawLight();
+  }, () => { corrVec = null; persist(); redraw(); },
+  () => { corrVec = hasGates() ? Geo.toLocal(current.gateA, current.gateB) : null; });
+}
 function makeGateMarker(key) {
   const m = L.marker(LL(current['gate' + key]), { draggable: false, icon: gateIcon(gateLabel(key)), zIndexOffset: 1000 }).addTo(map);
   m._psvLabel = gateLabel(key);
-  longPressDrag(m, ll => { current['gate' + key] = ll; drawLight(); }, () => { persist(); redraw(); });
+  corridorDrag(m, key);
   return m;
 }
+const midIcon = L.divIcon({ className: 'corrmid', iconSize: [38, 38], iconAnchor: [19, 19], html: '<span></span>' });
+function corridorMid() { return { lat: (current.gateA.lat + current.gateB.lat) / 2, lng: (current.gateA.lng + current.gateB.lng) / 2 }; }
 function syncGate(m, key) {
-  if (isDragging(markerA) || isDragging(markerB)) return; // ne jamais toucher une porte pendant un glissement
+  if (isDragging(m)) return; // le point tenu au doigt est placé par le glissement lui-même
   m.setLatLng(LL(current['gate' + key]));
   const lab = gateLabel(key);
   if (m._psvLabel !== lab) { m.setIcon(gateIcon(lab)); m._psvLabel = lab; }
@@ -318,11 +337,15 @@ function syncGate(m, key) {
 function placeGateMarkers() {
   if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else syncGate(markerA, 'A'); }
   if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
+  if (hasGates()) {
+    if (!markerMid) { markerMid = L.marker(LL(corridorMid()), { draggable: false, icon: midIcon, zIndexOffset: 950 }).addTo(map); corridorDrag(markerMid, 'M'); }
+    else if (!isDragging(markerMid)) markerMid.setLatLng(LL(corridorMid()));
+  }
   rotateGateIcons();
 }
 function resetGateMarkers() {
-  [markerA, markerB].forEach(m => m && map.removeLayer(m));
-  markerA = markerB = null;
+  [markerA, markerB, markerMid].forEach(m => m && map.removeLayer(m));
+  markerA = markerB = markerMid = null;
 }
 
 // Cadre la figure dans la partie libre de l'écran (hors barre du haut, boutons de gauche, zoom),
@@ -403,7 +426,7 @@ numFields.forEach(k => {
 // ---------- Bascules rapides sur la carte ----------
 function syncQuick() {
   const p = current.params, sh = current.show;
-  const h = k => hasGates() ? hdg(headingOf(k)) : (k === 'A' ? '1re' : '2e');
+  const h = k => hasGates() ? cardOf(headingOf(k)) : (k === 'A' ? 'P1' : 'P2');
   const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
   $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
@@ -444,11 +467,16 @@ $('c_len').addEventListener('change', e => { const v = numIn(e.target); if (!isN
 ['c_heading', 'c_len'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); }));
 
 
-function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', !!placing); }
-$('btnPlaceGates').addEventListener('click', () => {
-  if (placing && hasGates()) { placing = null; setBanner(null); syncPlaceBtn(); return; }
-  stopMeasure(); placing = 'A'; syncPlaceBtn(); setBanner('Touche la carte au début du couloir (1re porte).'); closeSheet();
-});
+function syncPlaceBtn() {
+  $('btnPlaceA').classList.toggle('on', placing === 'A'); $('btnPlaceB').classList.toggle('on', placing === 'B');
+  const lab = k => hasGates() ? `📍 Porte ${k === 'A' ? 1 : 2} (poser ${cardOf(headingOf(k))})` : `📍 Porte ${k === 'A' ? 1 : 2}`;
+  $('btnPlaceA').textContent = lab('A'); $('btnPlaceB').textContent = lab('B');
+}
+function placeBanner() { setBanner(placing ? `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.` : null); }
+['A', 'B'].forEach(k => $('btnPlace' + k).addEventListener('click', () => {
+  if (placing === k) { placing = null; placeBanner(); syncPlaceBtn(); return; } // 2e appui : annule
+  stopMeasure(); placing = k; syncPlaceBtn(); placeBanner(); closeSheet();
+}));
 // ---------- Mesure : cap et distance entre deux points touchés (dans l'ordre) ----------
 const measLayer = L.layerGroup().addTo(map);
 const meas = { active: false, a: null, b: null, ma: null, mb: null, line: null, halo: null, lbl: null };
@@ -500,15 +528,11 @@ map.on('click', e => {
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
-  if (placing === 'A') {
-    current.gateA = p; placing = 'B';
-    if (markerA) markerA.setLatLng(LL(p));
-    setBanner('Touche maintenant l\'autre bout du couloir (2e porte).');
-    if (markerB) { map.removeLayer(markerB); markerB = null; } current.gateB = null;
-  } else {
-    current.gateB = p; placing = null; setBanner(null);
-    toast('Portes placées. Fais-les glisser pour ajuster.');
-  }
+  current['gate' + placing] = p;
+  const other = placing === 'A' ? 'B' : 'A';
+  placing = current['gate' + other] ? null : other; // l'autre porte manque encore : on enchaîne
+  placeBanner();
+  if (!placing) toast('Couloir placé. Appui long sur une porte ou le milieu pour le déplacer en entier.');
   syncPlaceBtn(); persist(); redraw();
 });
 map.on('zoomend', redraw);
@@ -564,14 +588,16 @@ function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', 
   g.addEventListener('mousedown', e => start(e.clientY));
   window.addEventListener('mouseup', e => end(e.clientY));
 })();
+let lastTab = 'zones';
 function openSheet(tab) {
+  lastTab = tab;
   $('sheet').classList.remove('hidden'); setSheetSize(sheetSize);
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   ['reglages', 'pilote', 'zones'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
   if (tab === 'zones') renderZones();
 }
 function closeSheet() { $('sheet').classList.add('hidden'); }
-$('btnSettings').addEventListener('click', () => $('sheet').classList.contains('hidden') ? openSheet('reglages') : closeSheet());
+$('btnSettings').addEventListener('click', () => $('sheet').classList.contains('hidden') ? openSheet(lastTab) : closeSheet());
 $('btnZones').addEventListener('click', () => openSheet('zones'));
 $('btnClose').addEventListener('click', closeSheet);
 document.querySelectorAll('.tabs [data-tab]').forEach(b => b.addEventListener('click', () => openSheet(b.dataset.tab)));
@@ -618,17 +644,33 @@ function loadZone(id) {
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
   fillInputs(); if (hasGates()) fitFigure(); persist(); redraw(); closeSheet();
 }
+// Enregistrer : une zone pas encore enregistrée devient une NOUVELLE entrée (on n'écrase jamais une autre zone) ;
+// une zone déjà enregistrée est simplement mise à jour (elle l'est déjà à chaque modification).
 $('btnSaveZone').addEventListener('click', async () => {
-  const n = await ask('Nom de la zone (ex. Bouloc – couloir swoop) :', current.id ? current.name : ''); if (!n) return;
-  current.name = n;
-  if (!current.id) { current.id = 'z' + Date.now(); zones.push(clone(current)); }
-  store.set('psv.zones', zones); persist(); fillInputs(); renderZones(); toast('Zone enregistrée');
+  if (!hasGates()) return toast('Place d\'abord les deux portes');
+  if (current.id && zones.some(z => z.id === current.id)) { persist(); renderZones(); return toast(`« ${current.name} » est enregistrée`); }
+  const n = await ask('Nom de la zone (ex. Bouloc) :', ''); if (!n) return;
+  current.name = n; current.id = 'z' + Date.now(); current.updated = Date.now();
+  zones.push(clone(current)); store.set('psv.zones', zones); persist(); fillInputs(); renderZones(); toast(`Zone « ${n} » enregistrée`);
 });
-$('btnNewZone').addEventListener('click', async () => {
-  if (!(await ask('Créer une nouvelle zone au centre de la carte ? (les réglages de virage sont repris)'))) return;
-  const params = Object.assign({}, current.params);
-  current = newZone(map.getCenter()); current.params = params; current.zoom = map.getZoom();
-  resetGateMarkers(); placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
+// Nouvelle zone : on choisit d'abord où aller (ma position ou recherche), puis on place les portes
+function startNewZone(center, zoom) {
+  $('nzDlg').classList.add('hidden');
+  current = newZone(center); applyProfile(current); current.zoom = zoom || 17;
+  resetGateMarkers(); stopMeasure();
+  map.setView([center.lat, center.lng], current.zoom);
+  placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
+  toast('Place la porte 1, puis la porte 2, puis « Enregistrer » dans l\'onglet Zones');
+}
+$('btnNewZone').addEventListener('click', () => { $('searchResults').innerHTML = ''; $('nzDlg').classList.remove('hidden'); });
+$('nzCancel').addEventListener('click', () => $('nzDlg').classList.add('hidden'));
+$('nzHere').addEventListener('click', () => {
+  if (!navigator.geolocation) return toast('Géolocalisation indisponible');
+  $('nzHere').textContent = '📍 Recherche de ta position…';
+  navigator.geolocation.getCurrentPosition(pos => {
+    $('nzHere').textContent = '📍 Ma position';
+    startNewZone({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 17);
+  }, () => { $('nzHere').textContent = '📍 Ma position'; toast('Position refusée ou indisponible'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 });
 
 // ---------- Recherche ----------
@@ -649,7 +691,7 @@ async function doSearch() {
   const q = $('searchInput').value.trim(); if (!q) return;
   const ul = $('searchResults'); ul.innerHTML = '';
   const c = parseCoords(q);
-  if (c) { map.setView([c.lat, c.lng], 17); closeSheet(); return; }
+  if (c) { startNewZone(c, 17); return; }
   ul.innerHTML = '<li class="mut">Recherche…</li>';
   try {
     const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&accept-language=fr&q=' + encodeURIComponent(q));
@@ -658,7 +700,7 @@ async function doSearch() {
     js.forEach(x => {
       const li = document.createElement('li'); const b = document.createElement('button');
       b.className = 'res'; b.textContent = x.display_name;
-      b.onclick = () => { map.setView([+x.lat, +x.lon], 16); closeSheet(); };
+      b.onclick = () => startNewZone({ lat: +x.lat, lng: +x.lon }, 16);
       li.append(b); ul.append(li);
     });
   } catch (e) { ul.innerHTML = '<li class="mut">Recherche impossible (pas de réseau ?). Tu peux taper des coordonnées.</li>'; }
@@ -916,8 +958,8 @@ async function renderPdfCanvas() {
     dot(c.setup, col.setup, 8, `Setup ${cfgName(c)}`);
     if (showRec()) dot(c.rec, col.rec, 6.5, `Snap ${cfgName(c)}`);
   });
-  gateMark('A', `Portes ${hdg(headingOf('A'))}`);
-  gateMark('B', `Portes ${hdg(headingOf('B'))}`);
+  gateMark('A', `Portes ${cardOf(headingOf('A'))}`);
+  gateMark('B', `Portes ${cardOf(headingOf('B'))}`);
 
   // ---- Flèche du nord (haut droite) ----
   const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)
@@ -986,22 +1028,46 @@ $('pdfShare').addEventListener('click', async () => {
 });
 
 // ---------- Sauvegarde ----------
+// Exporter : fichier .json (zones + manœuvre) proposé à la feuille de partage (Fichiers, AirDrop, mail…).
 $('btnExport').addEventListener('click', async () => {
-  const data = JSON.stringify({ v: 2, zones, current, lastParams: current.params, profile });
-  try { await navigator.clipboard.writeText(data); toast('Données copiées : colle-les dans une note pour les garder'); }
-  catch (e) { $('ioText').value = data; $('ioText').classList.remove('hidden'); toast('Copie auto impossible : sélectionne le texte'); }
-});
-$('btnImport').addEventListener('click', () => { $('ioText').value = ''; $('ioText').classList.remove('hidden'); $('btnImportGo').classList.remove('hidden'); });
-$('btnImportGo').addEventListener('click', async () => {
+  persist();
+  const data = JSON.stringify({ app: 'setup-psv', v: 3, exported: new Date().toISOString(), profile, zones }, null, 1);
+  const name = `${dateStamp()}_Setup_PSV_zones.json`;
+  const file = new File([data], name, { type: 'application/json' });
   try {
-    const d = JSON.parse($('ioText').value);
-    if (!Array.isArray(d.zones)) throw 0;
-    if (!(await ask(`Remplacer tes zones par les ${d.zones.length} zones importées ?`))) return;
-    zones = d.zones.map(upgrade); zones.forEach(applyProfile); store.set('psv.zones', zones);
-    if (d.current) { current = upgrade(d.current); applyProfile(current); resetGateMarkers(); }
-    fillInputs(); persist(); redraw(); renderZones(); toast('Import réussi');
-    $('ioText').classList.add('hidden'); $('btnImportGo').classList.add('hidden');
-  } catch (e) { toast('Données illisibles'); }
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: name });
+    else { const url = URL.createObjectURL(file); const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
+  } catch (e) { if (e && e.name !== 'AbortError') toast('Export impossible'); }
+});
+// Importer : ajoute les zones du fichier à celles déjà là (fusion, rien n'est effacé).
+// Même zone des deux côtés → on garde la version la plus récente. Si l'appli est vide, on reprend aussi la manœuvre du fichier.
+$('btnImport').addEventListener('click', () => { $('importFile').value = ''; $('importFile').click(); });
+$('importFile').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.zones)) throw new Error('format');
+    const wasEmpty = zones.length === 0;
+    if (wasEmpty && d.profile) { PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); store.set('psv.profile', profile); }
+    let added = 0, updated = 0;
+    d.zones.map(upgrade).forEach(z => {
+      if (!z.id) z.id = 'z' + Date.now() + Math.random().toString(36).slice(2, 6);
+      applyProfile(z);
+      const i = zones.findIndex(x => x.id === z.id);
+      if (i < 0) { zones.push(z); added++; }
+      else if ((z.updated || 0) > (zones[i].updated || 0)) { zones[i] = z; updated++; }
+    });
+    store.set('psv.zones', zones);
+    if (wasEmpty) { applyProfile(current); fillInputs(); }
+    renderZones(); redraw();
+    toast(`Import : ${added} zone(s) ajoutée(s)${updated ? `, ${updated} mise(s) à jour` : ''}`);
+  } catch (er) { toast('Fichier illisible'); }
+});
+// Tout effacer (zones, manœuvre, zone en cours) — les photos gardées hors-ligne restent.
+$('btnWipe').addEventListener('click', async () => {
+  if (!(await ask('Effacer TOUTES les données (zones enregistrées, manœuvre, zone en cours) ? C\'est définitif. Pense à exporter avant si besoin.'))) return;
+  ['psv.zones', 'psv.current', 'psv.profile', 'psv.lastParams'].forEach(k => { try { localStorage.removeItem(k); } catch (er) {} });
+  location.reload();
 });
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }

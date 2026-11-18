@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=2.12.0">
+<link rel="stylesheet" href="style.css?v=3.0.0">
 </head>
 <body>
 <div id="map"></div>
@@ -46,15 +46,19 @@
 <section id="sheet" class="hidden">
   <div class="grab" id="grab"><span></span></div>
   <div class="tabs">
-    <button data-tab="reglages" class="on">Portes</button>
-    <button data-tab="pilote">Pilote</button>
-    <button data-tab="zones">Zones</button>
+    <button data-tab="pilote">Manœuvre</button>
+    <button data-tab="zones" class="on">Zones</button>
+    <button data-tab="reglages">Portes</button>
     <button id="btnClose" class="close">✕</button>
   </div>
 
-  <div id="tab-reglages" class="tab">
+  <div id="tab-reglages" class="tab hidden">
     <h3>Couloir et portes</h3>
-    <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer les portes : touche un bout du couloir puis l'autre</button></div>
+    <div class="row grid2">
+      <button id="btnPlaceA" class="wide">📍 Porte 1</button>
+      <button id="btnPlaceB" class="wide">📍 Porte 2</button>
+    </div>
+    <p class="hint">Touche un bouton puis la carte pour (re)placer cette porte. Pour déplacer tout le couloir sans changer son cap ni sa longueur : appui long sur une porte ou sur le rond au milieu du couloir, puis glisse.</p>
     <p class="hint" id="axisInfo"></p>
     <div class="row">
       <label>Cap 1re → 2e porte (°)</label>
@@ -79,7 +83,7 @@
   </div>
 
   <div id="tab-pilote" class="tab hidden">
-    <p class="hint">Ta façon de tourner : ces réglages sont communs à <b>toutes</b> tes zones. Les modifier met à jour toutes les zones enregistrées.</p>
+    <p class="hint">Ta manœuvre : ces réglages sont communs à <b>toutes</b> tes zones. Les modifier met à jour toutes les zones enregistrées.</p>
     <h3>Temps du virage</h3>
     <div class="grid2">
       <div><label>Abattée + rotation (s)</label><input id="p_t1" inputmode="decimal"></div>
@@ -112,8 +116,8 @@
   <div id="tab-zones" class="tab hidden">
     <h3>Zone actuelle</h3>
     <div class="row grid2">
-      <button id="btnSaveZone" class="wide">💾 Enregistrer sous…</button>
-      <button id="btnNewZone" class="wide">＋ Nouvelle zone ici</button>
+      <button id="btnNewZone" class="wide">＋ Nouvelle zone</button>
+      <button id="btnSaveZone" class="wide primary">💾 Enregistrer</button>
     </div>
     <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour du couloir)</button></div>
     <div id="offlineStatus" class="hint"></div>
@@ -121,21 +125,14 @@
     <h3>Mes zones</h3>
     <ul id="zoneList"></ul>
 
-    <h3>Aller à…</h3>
-    <div class="row search">
-      <input id="searchInput" placeholder="Ville, pays, aérodrome… ou 43.62, 1.21">
-      <button id="btnSearch">Chercher</button>
-    </div>
-    <ul id="searchResults"></ul>
-
     <h3>Sauvegarde</h3>
     <div class="row grid2">
-      <button id="btnExport" class="wide">Copier mes données</button>
-      <button id="btnImport" class="wide">Coller des données</button>
+      <button id="btnExport" class="wide">⬆︎ Exporter (fichier)</button>
+      <button id="btnImport" class="wide">⬇︎ Importer (fichier)</button>
     </div>
-    <textarea id="ioText" class="hidden" placeholder="Colle ici tes données puis touche « Importer »"></textarea>
-    <button id="btnImportGo" class="wide hidden">Importer</button>
-    <p class="hint">Version <span id="ver"></span></p>
+    <input type="file" id="importFile" accept=".json,application/json" class="hidden">
+    <div class="row"><button id="btnWipe" class="wide danger">🗑 Effacer toutes les données</button></div>
+    <p class="hint">Exporter crée un fichier avec toutes tes zones et ta manœuvre (à garder dans Fichiers, envoyer par AirDrop ou mail…). Importer ajoute les zones d'un tel fichier à celles déjà enregistrées, sans rien effacer. Version <span id="ver"></span></p>
   </div>
 </section>
 
@@ -144,6 +141,16 @@
     <p id="dlgText"></p>
     <input id="dlgInput">
     <div class="grid2"><button id="dlgCancel">Annuler</button><button id="dlgOk" class="primary">OK</button></div>
+  </div>
+</div>
+
+<div id="nzDlg" class="hidden">
+  <div class="box">
+    <p><b>Nouvelle zone : où ?</b></p>
+    <button id="nzHere" class="wide primary">📍 Ma position</button>
+    <div class="row search"><input id="searchInput" placeholder="Ville, aérodrome… ou 43.62, 1.21"><button id="btnSearch">Chercher</button></div>
+    <ul id="searchResults"></ul>
+    <button id="nzCancel" class="wide">Annuler</button>
   </div>
 </div>
 
@@ -156,9 +163,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=2.12.0"></script>
-<script src="vendor/leaflet-rotate.js?v=2.12.0"></script>
-<script src="geo.js?v=2.12.0"></script>
-<script src="app.js?v=2.12.0"></script>
+<script src="vendor/leaflet.js?v=3.0.0"></script>
+<script src="vendor/leaflet-rotate.js?v=3.0.0"></script>
+<script src="geo.js?v=3.0.0"></script>
+<script src="app.js?v=3.0.0"></script>
 </body>
 </html>

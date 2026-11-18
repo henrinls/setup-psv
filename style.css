@@ -35,8 +35,8 @@ ul{list-style:none;padding:0;margin:0}
 .search{display:flex;gap:6px}
 #searchResults .res{width:100%;text-align:left;margin:3px 0;background:#202020;font-size:13px}
 #ioText{min-height:90px;margin-top:6px}
-#dialog,#pdfReady{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
-#dialog .box,#pdfReady .box{background:#1d1d1d;border-radius:14px;padding:16px;width:100%;max-width:380px}
+#dialog,#pdfReady,#nzDlg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
+#dialog .box,#pdfReady .box,#nzDlg .box{background:#1d1d1d;border-radius:14px;padding:16px;width:100%;max-width:380px}
 #dialog input{margin:8px 0 12px}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(110px + env(safe-area-inset-bottom));background:#333;color:#fff;padding:9px 14px;border-radius:10px;z-index:2100;max-width:90vw;text-align:center;font-size:14px}
 .dot span{display:block;border-radius:50%;border:2px solid #111;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
@@ -75,3 +75,8 @@ button:disabled{opacity:.6}
 .gate.lifting .gsvg{transform:scale(1.35);filter:drop-shadow(0 0 4px #fff)}
 .measpt.lifting span{transform:scale(1.5);box-shadow:0 0 0 3px #fff}
 #sheet.mini{height:calc(200px + env(safe-area-inset-bottom))}#sheet.full{height:72vh}
+button.danger{border-color:#a33;color:#ff8a8a}
+#nzDlg .box{max-height:80vh;overflow:auto}#nzDlg .box>*{margin-top:8px}
+#searchResults .res{width:100%;text-align:left;margin:3px 0;background:#202020;font-size:13px}
+.corrmid span{display:block;width:18px;height:18px;margin:8px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid #fff;box-shadow:0 0 0 1.5px #000}
+.corrmid{-webkit-touch-callout:none;user-select:none}.corrmid.lifting span{transform:scale(1.5)}
