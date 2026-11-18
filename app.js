@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.7.1';
+const VERSION = '2.7.2';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -98,7 +98,7 @@ function figurePoints() {
   configs().forEach(c => {
     pts.push(c.legStart); if (showRec()) pts.push(c.rec, c.behind);
     const r = c.geo.rSetup || 0;
-    [[r, 0], [-r, 0], [0, r], [0, -r]].forEach(([x, y]) => pts.push(Geo.fromLocal(c.setup, { x, y })));
+    for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8; pts.push(Geo.fromLocal(c.setup, { x: r * Math.sin(a), y: r * Math.cos(a) })); } // tour du cercle (marche aussi carte tournée)
     pts.push(c.setup);
   });
   return pts;
@@ -273,9 +273,28 @@ function resetGateMarkers() {
   markerA = markerB = null;
 }
 
+// Cadre la figure dans la partie libre de l'écran (hors barre du haut, boutons de gauche, zoom),
+// en tenant compte de la rotation de la carte (fitBounds de Leaflet l'ignore).
+function freeRect() {
+  const W = map.getSize().x, H = map.getSize().y, m = 14;
+  const top = $('top').getBoundingClientRect(), quick = $('quick').getBoundingClientRect();
+  return { l: Math.max(m, quick.right + m), t: Math.max(m, top.bottom + m), r: W - 64, b: H - 40 };
+}
 function fitFigure() {
   const pts = figurePoints(); if (pts.length < 2) return;
-  map.fitBounds(L.latLngBounds(pts.map(LL)), { paddingTopLeft: [24, 80], paddingBottomRight: [24, 150], maxZoom: 19 });
+  for (let pass = 0; pass < 2; pass++) { // 2 passes : la 2e corrige les arrondis du zoom
+    const P = pts.map(p => map.latLngToContainerPoint(LL(p)));
+    const x0 = Math.min(...P.map(p => p.x)), x1 = Math.max(...P.map(p => p.x));
+    const y0 = Math.min(...P.map(p => p.y)), y1 = Math.max(...P.map(p => p.y));
+    const R = freeRect(), aw = Math.max(80, R.r - R.l), ah = Math.max(80, R.b - R.t);
+    const k = Math.min(aw / Math.max(x1 - x0, 1), ah / Math.max(y1 - y0, 1));
+    const z = Math.min(19, Math.floor((map.getZoom() + Math.log2(k)) * 4) / 4);
+    const centerLL = map.containerPointToLatLng([(x0 + x1) / 2, (y0 + y1) / 2]);
+    map.setView(centerLL, z, { animate: false });
+    // décale pour que le centre de la figure tombe au centre de la zone libre
+    const S = map.getSize(), cx = S.x / 2, cy = S.y / 2, ax = (R.l + R.r) / 2, ay = (R.t + R.b) / 2;
+    map.panBy([cx - ax, cy - ay], { animate: false });
+  }
 }
 
 function updateLegend() {
