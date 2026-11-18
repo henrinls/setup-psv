@@ -4,12 +4,12 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.1.0';
+const VERSION = '3.2.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
   t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
-  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, labels: true, rec: true
+  vref: 5, legLen: 150, legTime: 10, legSpeed: 15, legHeight: 300, setupHeight: null, rings: true, ticks: true, labels: true, rec: true
 };
 // Mêmes couleurs pour les deux configurations (demande d'Henri)
 const CFG_COLORS = { setup: '#ff2020', rec: '#ffd400', leg: '#000000' };
@@ -46,10 +46,13 @@ store.set('psv.zones', zones);
 // ---------- Profil pilote : réglages communs à toutes les zones ----------
 // Temps du virage, déports du setup et du point de snap, vent de référence : c'est la façon de tourner
 // d'Henri, pas une propriété de la zone. Une modification se répercute sur toutes les zones enregistrées.
-const PROFILE_KEYS = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legHeight']; // + étape de base
+const PROFILE_KEYS = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legSpeed', 'legHeight', 'setupHeight']; // + étape de base
 let profile = store.get('psv.profile', null);
 if (!profile) profile = {};
-PROFILE_KEYS.forEach(k => { if (profile[k] === undefined) profile[k] = current.params[k]; }); // complète un profil plus ancien
+PROFILE_KEYS.forEach(k => { if (profile[k] === undefined) profile[k] = current.params[k] !== undefined ? current.params[k] : DEFAULT_PARAMS[k]; }); // complète un profil plus ancien
+// Longueur de l'étape de base = durée × vitesse (la longueur n'est plus saisie)
+function legLenOf(p) { return Math.round((+p.legTime || 0) * (+p.legSpeed || 0)); }
+profile.legLen = legLenOf(profile); store.set('psv.profile', profile);
 store.set('psv.profile', profile);
 function applyProfile(z) { if (z && z.params) PROFILE_KEYS.forEach(k => { z.params[k] = profile[k]; }); }
 applyProfile(current); zones.forEach(applyProfile); store.set('psv.zones', zones);
@@ -402,20 +405,24 @@ function setBanner(t) { const b = $('banner'); if (!t) b.classList.add('hidden')
 let toastT;
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 2800); }
 
-const numFields = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legHeight'];
+const numFields = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legTime', 'legSpeed', 'legHeight', 'setupHeight'];
+const MEMO_FIELDS = ['legHeight', 'setupHeight']; // aide-mémoire : peuvent rester vides
 function fillInputs(only) {
   const p = current.params;
-  (only || numFields).forEach(k => { const el = $('p_' + k); if (el && document.activeElement !== el) el.value = p[k]; });
+  (only || numFields).forEach(k => { const el = $('p_' + k); if (el && document.activeElement !== el) el.value = p[k] == null ? '' : p[k]; });
+  $('legInfo').textContent = `Longueur tracée : ${legLenOf(p)} m (${p.legTime} s × ${p.legSpeed} m/s)`;
   if (only) return;
   syncQuick();
   $('zoneName').textContent = current.name + (current.id ? '' : ' (non enregistrée)');
 }
 numFields.forEach(k => {
   $('p_' + k).addEventListener('input', e => {
-    const v = parseFloat(String(e.target.value).replace(',', '.'));
-    if (isNaN(v)) return;
+    const raw = String(e.target.value).trim();
+    let v = parseFloat(raw.replace(',', '.'));
+    if (isNaN(v)) { if (raw === '' && MEMO_FIELDS.includes(k)) v = null; else return; }
     current.params[k] = v;
-    if (PROFILE_KEYS.includes(k)) { // réglage pilote : toutes les zones suivent
+    if (k === 'legTime' || k === 'legSpeed') { current.params.legLen = legLenOf(current.params); profile.legLen = current.params.legLen; $('legInfo').textContent = `Longueur tracée : ${current.params.legLen} m (${current.params.legTime} s × ${current.params.legSpeed} m/s)`; }
+    if (PROFILE_KEYS.includes(k)) { // réglage de manœuvre : toutes les zones suivent
       profile[k] = v; store.set('psv.profile', profile);
       zones.forEach(applyProfile); store.set('psv.zones', zones);
     }
@@ -989,9 +996,9 @@ async function renderPdfCanvas() {
   cfs.forEach(c => { tx(`${cfgName(c)} : poser au ${hdg(c.heading)}, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}`, col1, ly, c.colors.setup, fs, true); ly += lh; });
   [
     `Abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
-    `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral`,
+    `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral` + (p.setupHeight != null && p.setupHeight !== '' ? ` · hauteur ${p.setupHeight} m` : ''),
     `Point de snap : ${p.recBack} m arrière`,
-    `Étape de base : ${p.legLen} m · ${p.legTime} s · début à ${p.legHeight} m`,
+    `Étape de base : ${p.legTime} s à ${p.legSpeed} m/s = ${p.legLen} m` + (p.legHeight != null && p.legHeight !== '' ? ` · entrée à ${p.legHeight} m` : ''),
     `Cercles ${p.vref} m/s : setup ${r0(p.vref * t)} m · snap ${r0(p.vref * p.t2)} m`
   ].forEach((s2, i) => tx(s2, col2, l0 + i * lh, '#eee'));
   tx(`Imagerie © Esri, Maxar, Earthstar Geographics · Setup PSV v${VERSION}`, W - 20 * u, H - 10 * u, '#888', 8, false, 'right');
@@ -1048,7 +1055,7 @@ $('importFile').addEventListener('change', async e => {
     const d = JSON.parse(await f.text());
     if (!Array.isArray(d.zones)) throw new Error('format');
     const wasEmpty = zones.length === 0;
-    if (wasEmpty && d.profile) { PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); store.set('psv.profile', profile); }
+    if (wasEmpty && d.profile) { PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); profile.legLen = legLenOf(profile); store.set('psv.profile', profile); }
     let added = 0, updated = 0;
     d.zones.map(upgrade).forEach(z => {
       if (!z.id) z.id = 'z' + Date.now() + Math.random().toString(36).slice(2, 6);
