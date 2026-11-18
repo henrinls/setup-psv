@@ -1,0 +1,47 @@
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#111;color:#eee;font:15px/1.4 -apple-system,system-ui,sans-serif;overscroll-behavior:none}
+#map{position:fixed;inset:0;background:#222}
+.hidden{display:none!important}
+button{font:inherit;color:#eee;background:#2a2a2a;border:1px solid #444;border-radius:10px;padding:8px 10px;cursor:pointer}
+button.on,button.primary{background:#1f6fb2;border-color:#1f6fb2;color:#fff}
+input,textarea{font:inherit;font-size:16px;color:#eee;background:#1b1b1b;border:1px solid #444;border-radius:9px;padding:8px;width:100%}
+#top{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;z-index:1000;pointer-events:none}
+#top>*{pointer-events:auto}
+#top .spacer{flex:1;pointer-events:none}
+.pill{background:rgba(20,20,20,.85);border-color:#555;max-width:62vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.round{width:42px;height:42px;border-radius:50%;background:rgba(20,20,20,.85);font-size:20px;padding:0}
+#banner{position:fixed;top:calc(62px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:#ffd400;color:#111;font-weight:600;padding:8px 14px;border-radius:10px;z-index:1000;max-width:92vw;text-align:center}
+#legend{position:fixed;left:10px;bottom:calc(36px + env(safe-area-inset-bottom));background:rgba(15,15,15,.82);border-radius:10px;padding:7px 10px;font-size:12px;z-index:900;max-width:70vw;pointer-events:none}
+#legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+#legend .mut,.mut{color:#9a9a9a}
+#sheet{position:fixed;left:0;right:0;bottom:0;max-height:58vh;overflow:auto;background:#161616;border-radius:16px 16px 0 0;z-index:1100;padding:6px 14px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -6px 24px rgba(0,0,0,.5)}
+.grab{width:40px;height:5px;border-radius:3px;background:#555;margin:4px auto 8px}
+.tabs{display:flex;gap:8px;position:sticky;top:-6px;background:#161616;padding:6px 0;z-index:2}
+.tabs .close{margin-left:auto}
+h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#9ab;margin:16px 0 6px}
+label{font-size:12px;color:#aaa;display:block;margin-bottom:3px}
+.row{margin:6px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stepper{display:flex;gap:5px}.stepper input{text-align:center}.stepper button{padding:8px 9px}
+.wide{width:100%}
+.hint{font-size:12px;color:#8a8a8a;margin:4px 0}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;color:#ddd;margin:6px 0}.check input{width:20px;height:20px}
+ul{list-style:none;padding:0;margin:0}
+#zoneList li{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid #262626}
+#zoneList li.cur .zn{color:#ffd400}
+#zoneList .zn{flex:1}
+.search{display:flex;gap:6px}
+#searchResults .res{width:100%;text-align:left;margin:3px 0;background:#202020;font-size:13px}
+#ioText{min-height:90px;margin-top:6px}
+#dialog{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px}
+#dialog .box{background:#1d1d1d;border-radius:14px;padding:16px;width:100%;max-width:380px}
+#dialog input{margin:8px 0 12px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(110px + env(safe-area-inset-bottom));background:#333;color:#fff;padding:9px 14px;border-radius:10px;z-index:2100;max-width:90vw;text-align:center;font-size:14px}
+.dot span{display:block;border-radius:50%;border:2px solid #111;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
+.dot b{position:absolute;left:calc(100% + 6px);top:50%;transform:translateY(-50%);white-space:nowrap;font-size:12px;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
+.dot.big span{border-width:3px}
+.dot.handle span{background:rgba(255,255,255,.35)!important;border:2px solid #fff;box-shadow:0 0 0 1px #000}
+.glabel span{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;font-weight:700;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
+.leaflet-control-attribution{font-size:9px}
+.leaflet-bottom.leaflet-left .leaflet-control-scale{margin-bottom:calc(6px + env(safe-area-inset-bottom))}

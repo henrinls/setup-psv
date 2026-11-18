@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Setup PSV">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Setup pilotage sous voile</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<header id="top">
+  <button id="btnZones" class="pill" title="Zones">☰ <span id="zoneName">Nouvelle zone</span></button>
+  <div class="spacer"></div>
+  <button id="btnFit" class="round" title="Voir toute la figure">⤢</button>
+  <button id="btnLocate" class="round" title="Ma position">⌖</button>
+  <button id="btnSettings" class="round" title="Réglages">⚙</button>
+</header>
+
+<div id="banner" class="hidden"></div>
+
+<div id="legend"></div>
+
+<section id="sheet" class="hidden">
+  <div class="grab"></div>
+  <div class="tabs">
+    <button data-tab="reglages" class="on">Réglages</button>
+    <button data-tab="zones">Zones</button>
+    <button id="btnClose" class="close">✕</button>
+  </div>
+
+  <div id="tab-reglages" class="tab">
+    <h3>Portes et axe de poser</h3>
+    <div class="row">
+      <label>Axe de poser (°, sens du poser)</label>
+      <div class="stepper">
+        <button data-step="heading" data-d="-5">−5</button>
+        <button data-step="heading" data-d="-1">−1</button>
+        <input id="p_heading" inputmode="decimal">
+        <button data-step="heading" data-d="1">+1</button>
+        <button data-step="heading" data-d="5">+5</button>
+      </div>
+    </div>
+    <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer / déplacer les portes (toucher la carte)</button></div>
+
+    <h3>Virage</h3>
+    <div class="row seg" id="turnSeg">
+      <button data-turn="G">↺ Virage à gauche</button>
+      <button data-turn="D">↻ Virage à droite</button>
+    </div>
+    <div class="grid2">
+      <div><label>Abattée + rotation (s)</label><input id="p_t1" inputmode="decimal"></div>
+      <div><label>Recouvrement (s)</label><input id="p_t2" inputmode="decimal"></div>
+    </div>
+
+    <h3>Point de setup (vent nul)</h3>
+    <div class="grid2">
+      <div><label>Déport arrière (m)</label><input id="p_setupBack" inputmode="decimal"></div>
+      <div><label>Déport latéral (m)</label><input id="p_setupSide" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Le déport latéral se met du côté du virage (gauche si virage à gauche). Valeur négative = côté opposé.</p>
+
+    <h3>Point de recouvrement</h3>
+    <div class="grid2">
+      <div><label>Déport arrière (m)</label><input id="p_recBack" inputmode="decimal"></div>
+      <div><label>Vent de référence (m/s)</label><input id="p_vref" inputmode="decimal"></div>
+    </div>
+
+    <h3>Branche d'approche avant setup</h3>
+    <div class="grid2">
+      <div><label>Longueur (m)</label><input id="p_legLen" inputmode="decimal"></div>
+      <div><label>Durée sur la branche (s)</label><input id="p_legTime" inputmode="decimal"></div>
+      <div><label>Hauteur au début (m)</label><input id="p_legHeight" inputmode="decimal"></div>
+    </div>
+    <p class="hint">Branche perpendiculaire à l'axe de poser, venant de l'extérieur et dirigée vers l'axe, qui finit au point de setup.</p>
+
+    <h3>Affichage</h3>
+    <label class="check"><input type="checkbox" id="p_rings"> Anneaux intermédiaires (1 m/s)</label>
+    <label class="check"><input type="checkbox" id="p_corridor"> Prolonger l'axe devant les portes</label>
+  </div>
+
+  <div id="tab-zones" class="tab hidden">
+    <h3>Zone actuelle</h3>
+    <div class="row grid2">
+      <button id="btnSaveZone" class="wide">💾 Enregistrer sous…</button>
+      <button id="btnNewZone" class="wide">＋ Nouvelle zone ici</button>
+    </div>
+    <div class="row"><button id="btnOffline" class="wide">⬇︎ Disponible hors-ligne (photo autour des portes)</button></div>
+    <div id="offlineStatus" class="hint"></div>
+
+    <h3>Mes zones</h3>
+    <ul id="zoneList"></ul>
+
+    <h3>Aller à…</h3>
+    <div class="row search">
+      <input id="searchInput" placeholder="Ville, pays, aérodrome… ou 43.62, 1.21">
+      <button id="btnSearch">Chercher</button>
+    </div>
+    <ul id="searchResults"></ul>
+
+    <h3>Sauvegarde</h3>
+    <div class="row grid2">
+      <button id="btnExport" class="wide">Copier mes données</button>
+      <button id="btnImport" class="wide">Coller des données</button>
+    </div>
+    <textarea id="ioText" class="hidden" placeholder="Colle ici tes données puis touche « Importer »"></textarea>
+    <button id="btnImportGo" class="wide hidden">Importer</button>
+    <p class="hint">Version <span id="ver"></span></p>
+  </div>
+</section>
+
+<div id="dialog" class="hidden">
+  <div class="box">
+    <p id="dlgText"></p>
+    <input id="dlgInput">
+    <div class="grid2"><button id="dlgCancel">Annuler</button><button id="dlgOk" class="primary">OK</button></div>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="geo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
