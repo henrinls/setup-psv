@@ -69,6 +69,23 @@
     return { label, minor };
   }
 
-  const api = { toLocal, fromLocal, bearingOf, basis, offsetPoint, compute, tickSteps };
+  // Graduations « lisibles » demandées par Henri : peu de traits, tous chiffrés.
+  // Niveaux : 90° seuls → 45° → 30/45/60/90 par quart → tous les 10°. On prend le plus fin
+  // dont l'écart entre deux chiffres voisins reste ≥ 42 px sur le cercle.
+  const DEG_LEVELS = [
+    { minGap: 90, ok: d => d % 90 === 0 },
+    { minGap: 45, ok: d => d % 45 === 0 },
+    { minGap: 15, ok: d => d % 30 === 0 || d % 45 === 0 },
+    { minGap: 10, ok: d => d % 10 === 0 }
+  ];
+  function degTicks(radiusPx, minPx) {
+    const need = minPx || 42; let best = null;
+    for (const L of DEG_LEVELS) if (radiusPx * L.minGap * Math.PI / 180 >= need) best = L;
+    if (!best) return radiusPx >= 12 ? [0] : []; // tout petit cercle : juste le nord
+    const out = []; for (let d = 0; d < 360; d += 5) if (best.ok(d)) out.push(d);
+    return out;
+  }
+
+  const api = { toLocal, fromLocal, bearingOf, basis, offsetPoint, compute, tickSteps, degTicks };
   if (typeof module !== 'undefined') module.exports = api; else root.Geo = api;
 })(this);

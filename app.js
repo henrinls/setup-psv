@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.8.0';
+const VERSION = '2.9.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -208,19 +208,14 @@ function drawWindCircle(center, radius, color) {
   }
   if (p.ticks === false) return; // version épurée
   const mpp = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
-  const st = Geo.tickSteps(radius / mpp);
+  const degs = Geo.degTicks(radius / mpp);
   const pt = (deg, d) => { const a = deg * Math.PI / 180; return LL(Geo.fromLocal(center, { x: d * Math.sin(a), y: d * Math.cos(a) })); };
-  if (!st) { L.polyline([pt(0, radius), pt(0, radius - 8 * mpp)], { color, weight: 2, interactive: false }).addTo(grads); return; }
   const segs = [];
-  for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
-    const major = deg % st.label === 0;
-    segs.push([pt(deg, radius), pt(deg, radius - (major ? 11 : 6) * mpp)]);
-    if (major && showLabels()) {
-      const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
-      L.marker(pt(deg, radius + 13 * mpp), { interactive: false,
-        icon: L.divIcon({ className: 'glabel', html: `<span style="color:${color}">${deg}°${card}</span>`, iconSize: [0, 0] }) }).addTo(grads);
-    }
-  }
+  degs.forEach(deg => { // un trait + le chiffre à l'extérieur du cercle (les degrés restent affichés même sans les autres textes)
+    segs.push([pt(deg, radius), pt(deg, radius - 10 * mpp)]);
+    L.marker(pt(deg, radius + 15 * mpp), { interactive: false,
+      icon: L.divIcon({ className: 'glabel', html: `<span style="color:${color}">${deg}°</span>`, iconSize: [0, 0] }) }).addTo(grads);
+  });
   L.polyline(segs, { color, weight: 1.5, interactive: false }).addTo(grads);
 }
 
@@ -833,16 +828,12 @@ async function renderPdfCanvas() {
       g.setLineDash([]); g.globalAlpha = 1;
     }
     if (p.ticks !== false) {
-      const st = Geo.tickSteps(R / (u * 1.4)) || { label: 90, minor: null };
-      g.lineWidth = 1.4 * u;
-      for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
-        const major = deg % st.label === 0, a = pageAngle(deg), l = (major ? 12 : 6) * u;
+      g.lineWidth = 1.6 * u;
+      Geo.degTicks(R / u, 40).forEach(deg => { // mêmes graduations que sur la carte, chiffres à l'extérieur
+        const a = pageAngle(deg), l = 11 * u;
         g.beginPath(); g.moveTo(c.x + R * Math.sin(a), c.y - R * Math.cos(a)); g.lineTo(c.x + (R - l) * Math.sin(a), c.y - (R - l) * Math.cos(a)); g.stroke();
-        if (major && showLabels()) {
-          const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
-          shadowText(`${deg}°${card}`, c.x + (R + 14 * u) * Math.sin(a), c.y - (R + 14 * u) * Math.cos(a), color, 11, 'center');
-        }
-      }
+        shadowText(`${deg}°`, c.x + (R + 16 * u) * Math.sin(a), c.y - (R + 16 * u) * Math.cos(a), color, 12, 'center');
+      });
     }
     g.restore();
   };

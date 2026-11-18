@@ -43,7 +43,7 @@ ul{list-style:none;padding:0;margin:0}
 .dot b{position:absolute;left:calc(100% + 6px);top:50%;transform:translateY(-50%);white-space:nowrap;font-size:12px;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
 .dot.big span{border-width:3px}
 .dot.handle span{background:rgba(255,255,255,.35)!important;border:2px solid #fff;box-shadow:0 0 0 1px #000}
-.glabel span{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;font-weight:700;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
+.glabel span{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:13px;font-weight:700;text-shadow:0 0 3px #000,0 0 3px #000,0 0 2px #000}
 .leaflet-control-attribution{font-size:9px}
 .leaflet-bottom.leaflet-left .leaflet-control-scale{margin-bottom:calc(6px + env(safe-area-inset-bottom))}
 button:disabled{opacity:.6}
