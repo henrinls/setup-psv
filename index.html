@@ -20,6 +20,7 @@
 <header id="top">
   <button id="btnZones" class="pill" title="Zones">☰ <span id="zoneName">Nouvelle zone</span></button>
   <div class="spacer"></div>
+  <button id="btnNorth" class="round" title="Remettre le nord en haut"><span id="compassNeedle">▲<small>N</small></span></button>
   <button id="btnFit" class="round" title="Voir toute la figure">⤢</button>
   <button id="btnLocate" class="round" title="Ma position">⌖</button>
   <button id="btnSettings" class="round" title="Réglages">⚙</button>
@@ -28,10 +29,11 @@
 <div id="banner" class="hidden"></div>
 
 <nav id="quick">
-  <button id="qTurnA" class="qa" title="Sens du virage depuis la porte A"></button>
-  <button id="qShowA" class="qa" title="Afficher la configuration A">A</button>
-  <button id="qTurnB" class="qb" title="Sens du virage depuis la porte B"></button>
-  <button id="qShowB" class="qb" title="Afficher la configuration B">B</button>
+  <button id="qTurnA" class="qa" title="Sens du virage depuis la 1re porte"></button>
+  <button id="qShowA" class="qa" title="Afficher la configuration de la 1re porte"></button>
+  <button id="qTurnB" class="qb" title="Sens du virage depuis la 2e porte"></button>
+  <button id="qShowB" class="qb" title="Afficher la configuration de la 2e porte"></button>
+  <button id="qLabels" title="Afficher / masquer les textes">Aa</button>
   <button id="qTicks" title="Graduations en degrés">0°</button>
   <button id="qRings" title="Anneaux 1 m/s">◎</button>
 </nav>
@@ -48,10 +50,10 @@
 
   <div id="tab-reglages" class="tab">
     <h3>Couloir et portes</h3>
-    <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer les portes : touche A puis B sur la carte</button></div>
+    <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer les portes : touche un bout du couloir puis l'autre</button></div>
     <p class="hint" id="axisInfo"></p>
     <div class="row">
-      <label>Affiner l'axe (tourne la porte B autour de la porte A)</label>
+      <label>Affiner l'axe (tourne la 2e porte autour de la 1re)</label>
       <div class="stepper">
         <button data-rot="-5">−5°</button>
         <button data-rot="-1">−1°</button>
@@ -89,7 +91,7 @@
 
     <h3>Export</h3>
     <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4 paysage)</button></div>
-    <p class="hint">Toujours en paysage. La page est tournée pour que la branche d'approche monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend ce qui est affiché et tous tes réglages.</p>
+    <p class="hint">Toujours en paysage. La page est tournée pour que la branche d'approche monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend exactement ce qui est affiché (boutons de gauche : configurations, textes, graduations, anneaux) ; le bandeau du bas reprend tous tes réglages.</p>
   </div>
 
   <div id="tab-zones" class="tab hidden">
@@ -140,6 +142,7 @@
 <div id="toast" class="hidden"></div>
 
 <script src="vendor/leaflet.js"></script>
+<script src="vendor/leaflet-rotate.js"></script>
 <script src="geo.js"></script>
 <script src="app.js"></script>
 </body>

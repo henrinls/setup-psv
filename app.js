@@ -1,10 +1,10 @@
 'use strict';
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
   t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
-  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true
+  vref: 5, legLen: 150, legTime: 10, legHeight: 300, rings: true, ticks: true, labels: true
 };
 const PALETTE = {
   A: { setup: '#ff7a1a', rec: '#22d3ee', leg: '#e879f9' },
@@ -56,6 +56,13 @@ function persist() {
   }
 }
 
+// Noms affichés : cap de l'axe de poser sur 3 chiffres + G/D (jamais A/B à l'écran)
+const hdg = h => String(Math.round(h) % 360).padStart(3, '0') + '°';
+function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h + 180) % 360; }
+function cfgName(c) { return `${hdg(c.heading)} ${c.turn}`; }
+function cfgNameKey(key) { return hasGates() ? `${hdg(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? '1re porte' : '2e porte'); }
+const showLabels = () => current.params.labels !== false;
+
 // ---------- Figure (calcul pur, réutilisé par la carte et le PDF) ----------
 function hasGates() { return !!(current.gateA && current.gateB); }
 function axisHeading() { return Geo.bearingOf(Geo.toLocal(current.gateA, current.gateB)); }
@@ -92,7 +99,8 @@ function figurePoints() {
 }
 
 // ---------- Carte ----------
-const map = L.map('map', { zoomControl: false, maxZoom: 22, zoomSnap: 0.25, attributionControl: true })
+const map = L.map('map', { zoomControl: false, maxZoom: 22, zoomSnap: 0.25, attributionControl: true,
+  rotate: true, touchRotate: true, bearing: current.bearing || 0, rotateControl: false, touchPitch: false, pitchDrag: false, shiftKeyRotate: true })
   .setView([current.center.lat, current.center.lng], current.zoom);
 L.tileLayer(TILE_URL, {
   maxNativeZoom: 19, maxZoom: 22, crossOrigin: 'anonymous',
@@ -101,6 +109,14 @@ L.tileLayer(TILE_URL, {
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
 map.on('moveend', () => { current.center = map.getCenter(); current.zoom = map.getZoom(); store.set('psv.current', current); });
+// Boussole : indique le nord quand la carte est tournée ; un appui remet le nord en haut
+function syncCompass() {
+  const b = map.getBearing ? map.getBearing() : 0;
+  $('compassNeedle').style.transform = `rotate(${-b}deg)`;
+  $('btnNorth').classList.toggle('rotated', Math.abs(((b % 360) + 360) % 360) > 0.5);
+}
+let rotT = 0;
+map.on('rotate', () => { syncCompass(); current.bearing = map.getBearing(); clearTimeout(rotT); rotT = setTimeout(persist, 400); });
 
 const fig = L.layerGroup().addTo(map);
 const grads = L.layerGroup().addTo(map);
@@ -130,10 +146,10 @@ function arrowAt(from, to, frac, size) {
 
 function draw() {
   fig.clearLayers(); grads.clearLayers();
-  updateLegend(); updateAxisInfo();
+  updateLegend(); updateAxisInfo(); syncQuick();
   if (!hasGates()) {
     if (!placing) placing = current.gateA ? 'B' : 'A';
-    setBanner(`Touche la carte pour placer la porte ${placing}.`);
+    setBanner(placing === 'A' ? 'Touche la carte au début du couloir (1re porte).' : 'Touche maintenant l\'autre bout du couloir (2e porte).');
     syncPlaceBtn();
     if (current.gateA) placeGateMarkers();
     return;
@@ -157,19 +173,19 @@ function draw() {
     if ((+p.legLen || 0) > 0) {
       L.polyline([LL(c.legStart), LL(c.setup)], { color: col.leg, weight: 3, interactive: false }).addTo(fig);
       L.polyline(arrowAt(c.legStart, c.setup, 0.55, Math.min(10, (+p.legLen || 0) * 0.08 + 3)), { color: col.leg, weight: 3, interactive: false }).addTo(fig);
-      L.marker(LL(c.legStart), { icon: dotIcon(col.leg, 10, `${legLine1(c)}<br><small>${legLine2(c)}</small>`), interactive: false }).addTo(fig);
+      L.marker(LL(c.legStart), { icon: dotIcon(col.leg, 10, showLabels() ? `${legLine1(c)}<br><small>${legLine2(c)}</small>` : ''), interactive: false }).addTo(fig);
     }
     L.polyline([LL(c.setup), LL(c.rec)], { color: '#fff', weight: 1, opacity: .45, dashArray: '2 6', interactive: false }).addTo(fig);
 
     drawWindCircle(c.setup, c.geo.rSetup, col.setup);
     drawWindCircle(c.rec, c.geo.rRec, col.rec);
-    L.marker(LL(c.setup), { icon: dotIcon(col.setup, 14, `Setup ${c.key}`), interactive: false }).addTo(fig);
-    L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, `Recouvr. ${c.key}`), interactive: false }).addTo(fig);
+    L.marker(LL(c.setup), { icon: dotIcon(col.setup, 14, showLabels() ? `Setup ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
+    L.marker(LL(c.rec), { icon: dotIcon(col.rec, 11, showLabels() ? `Recouvr. ${cfgName(c)}` : ''), interactive: false }).addTo(fig);
   });
   placeGateMarkers();
 }
 
-function legLine1(c) { const p = current.params; return `Branche ${c.key} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
+function legLine1(c) { const p = current.params; return `Branche ${cfgName(c)} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
 function legLine2(c) { const p = current.params; return `cap ${Math.round(c.geo.legHeading)}°` + (+p.legHeight ? ` · début à ${p.legHeight} m` : ''); }
 
 function drawWindCircle(center, radius, color) {
@@ -190,7 +206,7 @@ function drawWindCircle(center, radius, color) {
   for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
     const major = deg % st.label === 0;
     segs.push([pt(deg, radius), pt(deg, radius - (major ? 11 : 6) * mpp)]);
-    if (major) {
+    if (major && showLabels()) {
       const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
       L.marker(pt(deg, radius + 13 * mpp), { interactive: false,
         icon: L.divIcon({ className: 'glabel', html: `<span style="color:${color}">${deg}°${card}</span>`, iconSize: [0, 0] }) }).addTo(grads);
@@ -200,15 +216,23 @@ function drawWindCircle(center, radius, color) {
 }
 
 const isDragging = m => !!(m && m.dragging && m.dragging._draggable && m.dragging._draggable._moving);
+function gateLabel(key) { return showLabels() && hasGates() ? `Portes ${hdg(headingOf(key))}` : ''; }
 function makeGateMarker(key) {
-  const m = L.marker(LL(current['gate' + key]), { draggable: true, icon: dotIcon(GATE_COLOR, 18, `Porte ${key}`, 'big'), zIndexOffset: 1000 }).addTo(map);
+  const m = L.marker(LL(current['gate' + key]), { draggable: true, icon: dotIcon(GATE_COLOR, 18, gateLabel(key), 'big'), zIndexOffset: 1000 }).addTo(map);
+  m._psvLabel = gateLabel(key);
   m.on('drag', e => { current['gate' + key] = { lat: e.latlng.lat, lng: e.latlng.lng }; drawLight(); });
   m.on('dragend', () => { persist(); redraw(); });
   return m;
 }
+function syncGate(m, key) {
+  if (isDragging(markerA) || isDragging(markerB)) return; // ne jamais toucher une porte pendant un glissement
+  m.setLatLng(LL(current['gate' + key]));
+  const lab = gateLabel(key);
+  if (m._psvLabel !== lab) { m.setIcon(dotIcon(GATE_COLOR, 18, lab, 'big')); m._psvLabel = lab; }
+}
 function placeGateMarkers() {
-  if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else if (!isDragging(markerA)) markerA.setLatLng(LL(current.gateA)); }
-  if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else if (!isDragging(markerB)) markerB.setLatLng(LL(current.gateB)); }
+  if (current.gateA) { if (!markerA) markerA = makeGateMarker('A'); else syncGate(markerA, 'A'); }
+  if (current.gateB) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
 }
 function resetGateMarkers() {
   [markerA, markerB].forEach(m => m && map.removeLayer(m));
@@ -224,15 +248,16 @@ function updateLegend() {
   const p = current.params, t = (+p.t1 || 0) + (+p.t2 || 0), r0 = Math.round;
   let h = '';
   configs().forEach(c => {
-    h += `<div><i style="background:${c.colors.setup}"></i>${c.key} : poser ${r0(c.heading)}° · virage ${c.turn === 'G' ? 'gauche' : 'droite'}</div>`;
+    h += `<div><i style="background:${c.colors.setup}"></i>${cfgName(c)} : poser au ${hdg(c.heading)}, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}</div>`;
   });
   h += `<div class="mut">Cercles 5 m/s : setup ${r0((+p.vref || 0) * t)} m · recouvr. ${r0((+p.vref || 0) * (+p.t2 || 0))} m</div>`;
   h += `<div class="mut">1 m/s = ${r0(t)} m (setup) · ${r0(+p.t2 || 0)} m (recouvr.)</div>`;
   $('legend').innerHTML = h;
+  $('legend').classList.toggle('hidden', !showLabels());
 }
 function updateAxisInfo() {
   $('axisInfo').textContent = hasGates()
-    ? `Axe A→B : ${Math.round(axisHeading())}° · B→A : ${Math.round((axisHeading() + 180) % 360)}° · couloir ${Math.round(corridorLength())} m`
+    ? `Axes de poser : ${hdg(axisHeading())} et ${hdg((axisHeading() + 180) % 360)} · couloir ${Math.round(corridorLength())} m`
     : 'Portes pas encore placées.';
 }
 
@@ -261,15 +286,17 @@ numFields.forEach(k => {
 // ---------- Bascules rapides sur la carte ----------
 function syncQuick() {
   const p = current.params, sh = current.show;
-  const t = k => current['turn' + k] === 'G' ? `${k} ↺ G` : `${k} ↻ D`;
+  const h = k => hasGates() ? hdg(headingOf(k)) : (k === 'A' ? '1re' : '2e');
+  const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
   $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
-  $('qShowA').textContent = sh !== 'B' ? '👁 A' : 'A'; $('qShowB').textContent = sh !== 'A' ? '👁 B' : 'B';
+  $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
+  $('qLabels').classList.toggle('on', showLabels());
   $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
 }
 function quick(fn, msg) { fn(); syncQuick(); persist(); redraw(); if (msg) toast(msg()); }
-$('qTurnA').addEventListener('click', () => quick(() => { current.turnA = current.turnA === 'G' ? 'D' : 'G'; }, () => `Porte A : virage à ${current.turnA === 'G' ? 'gauche' : 'droite'}`));
-$('qTurnB').addEventListener('click', () => quick(() => { current.turnB = current.turnB === 'G' ? 'D' : 'G'; }, () => `Porte B : virage à ${current.turnB === 'G' ? 'gauche' : 'droite'}`));
+$('qTurnA').addEventListener('click', () => quick(() => { current.turnA = current.turnA === 'G' ? 'D' : 'G'; }, () => `${cfgNameKey('A')} : virage à ${current.turnA === 'G' ? 'gauche' : 'droite'}`));
+$('qTurnB').addEventListener('click', () => quick(() => { current.turnB = current.turnB === 'G' ? 'D' : 'G'; }, () => `${cfgNameKey('B')} : virage à ${current.turnB === 'G' ? 'gauche' : 'droite'}`));
 function toggleShow(k) {
   const vis = { A: current.show !== 'B', B: current.show !== 'A' };
   vis[k] = !vis[k];
@@ -279,6 +306,7 @@ function toggleShow(k) {
 $('qShowA').addEventListener('click', () => toggleShow('A'));
 $('qShowB').addEventListener('click', () => toggleShow('B'));
 $('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
+$('qLabels').addEventListener('click', () => quick(() => { current.params.labels = !showLabels(); resetGateMarkers(); }, () => showLabels() ? 'Textes affichés' : 'Textes masqués'));
 $('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
 document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
   if (!hasGates()) return toast('Place d\'abord les deux portes');
@@ -291,7 +319,7 @@ document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click',
 function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', !!placing); }
 $('btnPlaceGates').addEventListener('click', () => {
   if (placing && hasGates()) { placing = null; setBanner(null); syncPlaceBtn(); return; }
-  placing = 'A'; syncPlaceBtn(); setBanner('Touche la carte pour placer la porte A.'); closeSheet();
+  placing = 'A'; syncPlaceBtn(); setBanner('Touche la carte au début du couloir (1re porte).'); closeSheet();
 });
 map.on('click', e => {
   if (!placing) return;
@@ -299,7 +327,7 @@ map.on('click', e => {
   if (placing === 'A') {
     current.gateA = p; placing = 'B';
     if (markerA) markerA.setLatLng(LL(p));
-    setBanner('Touche maintenant la porte B (l\'autre bout du couloir).');
+    setBanner('Touche maintenant l\'autre bout du couloir (2e porte).');
     if (markerB) { map.removeLayer(markerB); markerB = null; } current.gateB = null;
   } else {
     current.gateB = p; placing = null; setBanner(null);
@@ -359,6 +387,7 @@ function loadZone(id) {
   const z = zones.find(x => x.id === id); if (!z) return;
   current = upgrade(clone(z));
   resetGateMarkers(); placing = null; setBanner(null);
+  map.setBearing(current.bearing || 0);
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
   fillInputs(); if (hasGates()) fitFigure(); persist(); redraw(); closeSheet();
 }
@@ -421,6 +450,7 @@ function locate(center) {
   }, () => { if (center) toast('Position refusée ou indisponible'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 }
 $('btnLocate').addEventListener('click', () => locate(true));
+$('btnNorth').addEventListener('click', () => { map.setBearing(0); current.bearing = 0; persist(); });
 $('btnFit').addEventListener('click', () => { if (hasGates()) fitFigure(); else toast('Place d\'abord les portes'); });
 
 // ---------- Images satellite (cache commun carte / hors-ligne / PDF) ----------
@@ -563,7 +593,7 @@ async function renderPdfCanvas() {
   const dot = (ll, color, r, label) => {
     const c = toC(ll); g.save(); g.beginPath(); g.arc(c.x, c.y, r * u, 0, 2 * Math.PI); g.fillStyle = color; g.fill();
     g.lineWidth = 1.2 * u; g.strokeStyle = '#111'; g.stroke(); g.restore();
-    if (label) shadowText(label, c.x + (r + 4) * u, c.y, color, 13);
+    if (label && showLabels()) shadowText(label, c.x + (r + 4) * u, c.y, color, 13);
   };
   const chevron = (from, to, frac, color) => {
     const A = toC(from), B = toC(to), dx = B.x - A.x, dy = B.y - A.y, n = Math.hypot(dx, dy) || 1, ux = dx / n, uy = dy / n;
@@ -587,7 +617,7 @@ async function renderPdfCanvas() {
       for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
         const major = deg % st.label === 0, a = pageAngle(deg), l = (major ? 12 : 6) * u;
         g.beginPath(); g.moveTo(c.x + R * Math.sin(a), c.y - R * Math.cos(a)); g.lineTo(c.x + (R - l) * Math.sin(a), c.y - (R - l) * Math.cos(a)); g.stroke();
-        if (major) {
+        if (major && showLabels()) {
           const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
           shadowText(`${deg}°${card}`, c.x + (R + 14 * u) * Math.sin(a), c.y - (R + 14 * u) * Math.cos(a), color, 11, 'center');
         }
@@ -610,7 +640,7 @@ async function renderPdfCanvas() {
       // Libellé de branche jamais posé sur la branche :
       // branche plutôt verticale → libellé à côté du point ; plutôt horizontale → au-dessus, côté extérieur
       const Sp = toC(c.setup), dx = S.x - Sp.x, dy = S.y - Sp.y, dn = Math.hypot(dx, dy) || 1;
-      if (Math.abs(dx / dn) < 0.5) {
+      if (!showLabels()) { /* textes masqués */ } else if (Math.abs(dx / dn) < 0.5) {
         shadowText(legLine1(c), S.x + 12 * u, S.y - 9 * u, col.leg, 13);
         shadowText(legLine2(c), S.x + 12 * u, S.y + 9 * u, col.leg, 11);
       } else {
@@ -622,11 +652,11 @@ async function renderPdfCanvas() {
     line(c.setup, c.rec, '#ffffff', 1, [2, 6]);
     circle(c.setup, c.geo.rSetup, col.setup);
     circle(c.rec, c.geo.rRec, col.rec);
-    dot(c.setup, col.setup, 8, `Setup ${c.key}`);
-    dot(c.rec, col.rec, 6.5, `Recouvr. ${c.key}`);
+    dot(c.setup, col.setup, 8, `Setup ${cfgName(c)}`);
+    dot(c.rec, col.rec, 6.5, `Recouvr. ${cfgName(c)}`);
   });
-  dot(current.gateA, GATE_COLOR, 9, 'Porte A');
-  dot(current.gateB, GATE_COLOR, 9, 'Porte B');
+  dot(current.gateA, GATE_COLOR, 9, `Portes ${hdg(headingOf('A'))}`);
+  dot(current.gateB, GATE_COLOR, 9, `Portes ${hdg(headingOf('B'))}`);
 
   // ---- Flèche du nord (haut droite) ----
   const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)
@@ -653,7 +683,7 @@ async function renderPdfCanvas() {
   tx(`${current.name}`, col1, l0, '#fff', fs * 1.3, true);
   tx(`${new Date().toLocaleDateString('fr-FR')} · couloir ${r0(corridorLength())} m`, col1, l0 + lh * 1.2, '#bbb');
   let ly = l0 + lh * 2.4;
-  cfs.forEach(c => { tx(`Porte ${c.key} : poser au ${r0(c.heading)}°, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}`, col1, ly, c.colors.setup, fs, true); ly += lh; });
+  cfs.forEach(c => { tx(`${cfgName(c)} : poser au ${hdg(c.heading)}, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}`, col1, ly, c.colors.setup, fs, true); ly += lh; });
   [
     `Abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
     `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral`,
@@ -717,6 +747,7 @@ function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<':
 
 // ---------- Démarrage ----------
 $('ver').textContent = VERSION;
+syncCompass();
 fillInputs();
 if (hasGates()) fitFigure();
 redraw();

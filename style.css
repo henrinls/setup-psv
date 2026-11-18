@@ -8,7 +8,7 @@ input,textarea{font:inherit;font-size:16px;color:#eee;background:#1b1b1b;border:
 #top{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;padding:calc(8px + env(safe-area-inset-top)) 10px 8px;z-index:1000;pointer-events:none}
 #top>*{pointer-events:auto}
 #top .spacer{flex:1;pointer-events:none}
-.pill{background:rgba(20,20,20,.85);border-color:#555;max-width:62vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pill{background:rgba(20,20,20,.85);border-color:#555;max-width:44vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .round{width:42px;height:42px;border-radius:50%;background:rgba(20,20,20,.85);font-size:20px;padding:0}
 #banner{position:fixed;top:calc(62px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:#ffd400;color:#111;font-weight:600;padding:8px 14px;border-radius:10px;z-index:1000;max-width:92vw;text-align:center}
 #legend{position:fixed;left:10px;bottom:calc(36px + env(safe-area-inset-bottom));background:rgba(15,15,15,.82);border-radius:10px;padding:7px 10px;font-size:12px;z-index:900;max-width:70vw;pointer-events:none}
@@ -53,3 +53,8 @@ button:disabled{opacity:.6}
 #quick .qa{border-color:#ff7a1a}#quick .qb{border-color:#a3e635}
 #quick #qTurnA,#quick #qTurnB{color:#fff}
 #quick #qShowA:not(.on),#quick #qShowB:not(.on),#quick #qTicks:not(.on),#quick #qRings:not(.on){opacity:.55;text-decoration:line-through}
+#btnNorth #compassNeedle{display:inline-flex;flex-direction:column;align-items:center;line-height:.8;font-size:15px;color:#ff5a4a;transition:transform .1s}
+#btnNorth #compassNeedle small{font-size:9px;color:#fff;font-weight:700}
+#btnNorth:not(.rotated){opacity:.75}
+#btnNorth.rotated{border-color:#ff5a4a}
+#quick #qLabels:not(.on){opacity:.55;text-decoration:line-through}
