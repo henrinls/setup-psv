@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -247,10 +247,7 @@ function fillInputs(only) {
   const p = current.params;
   (only || numFields).forEach(k => { const el = $('p_' + k); if (el && document.activeElement !== el) el.value = p[k]; });
   if (only) return;
-  $('p_rings').checked = !!p.rings; $('p_ticks').checked = p.ticks !== false;
-  document.querySelectorAll('#turnA button').forEach(b => b.classList.toggle('on', b.dataset.turn === current.turnA));
-  document.querySelectorAll('#turnB button').forEach(b => b.classList.toggle('on', b.dataset.turn === current.turnB));
-  document.querySelectorAll('#showSeg button').forEach(b => b.classList.toggle('on', b.dataset.show === current.show));
+  syncQuick();
   $('zoneName').textContent = current.name + (current.id ? '' : ' (non enregistrée)');
 }
 numFields.forEach(k => {
@@ -261,12 +258,28 @@ numFields.forEach(k => {
   });
   $('p_' + k).addEventListener('blur', () => fillInputs([k]));
 });
-['A', 'B'].forEach(k => document.querySelectorAll('#turn' + k + ' button').forEach(b => b.addEventListener('click', () => {
-  current['turn' + k] = b.dataset.turn; fillInputs(); persist(); redraw();
-})));
-document.querySelectorAll('#showSeg button').forEach(b => b.addEventListener('click', () => {
-  current.show = b.dataset.show; fillInputs(); persist(); redraw();
-}));
+// ---------- Bascules rapides sur la carte ----------
+function syncQuick() {
+  const p = current.params, sh = current.show;
+  const t = k => current['turn' + k] === 'G' ? `${k} ↺ G` : `${k} ↻ D`;
+  $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
+  $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
+  $('qShowA').textContent = sh !== 'B' ? '👁 A' : 'A'; $('qShowB').textContent = sh !== 'A' ? '👁 B' : 'B';
+  $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
+}
+function quick(fn, msg) { fn(); syncQuick(); persist(); redraw(); if (msg) toast(msg()); }
+$('qTurnA').addEventListener('click', () => quick(() => { current.turnA = current.turnA === 'G' ? 'D' : 'G'; }, () => `Porte A : virage à ${current.turnA === 'G' ? 'gauche' : 'droite'}`));
+$('qTurnB').addEventListener('click', () => quick(() => { current.turnB = current.turnB === 'G' ? 'D' : 'G'; }, () => `Porte B : virage à ${current.turnB === 'G' ? 'gauche' : 'droite'}`));
+function toggleShow(k) {
+  const vis = { A: current.show !== 'B', B: current.show !== 'A' };
+  vis[k] = !vis[k];
+  if (!vis.A && !vis.B) { toast('Il faut au moins une porte affichée'); return; }
+  quick(() => { current.show = vis.A && vis.B ? 'AB' : (vis.A ? 'A' : 'B'); });
+}
+$('qShowA').addEventListener('click', () => toggleShow('A'));
+$('qShowB').addEventListener('click', () => toggleShow('B'));
+$('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
+$('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
 document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
   if (!hasGates()) return toast('Place d\'abord les deux portes');
   const v = Geo.toLocal(current.gateA, current.gateB), d = Math.hypot(v.x, v.y);
@@ -274,8 +287,6 @@ document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click',
   current.gateB = Geo.fromLocal(current.gateA, { x: d * Math.sin(h), y: d * Math.cos(h) });
   persist(); redraw();
 }));
-$('p_rings').addEventListener('change', e => { current.params.rings = e.target.checked; persist(); redraw(); });
-$('p_ticks').addEventListener('change', e => { current.params.ticks = e.target.checked; persist(); redraw(); });
 
 function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', !!placing); }
 $('btnPlaceGates').addEventListener('click', () => {
@@ -470,52 +481,69 @@ function loadJsPdf() {
 function dateStamp() { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; }
 function safeName(s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'zone'; }
 
+// Cap (°) vers lequel la page est tournée : la branche d'approche « monte » vers le haut de la page.
+// Côté extérieur de la configuration A si elle est affichée, sinon de la B.
+function pdfUpBearing() {
+  const c = configs()[0];
+  return c ? (c.geo.legHeading + 180) % 360 : 0;
+}
+
 async function renderPdfCanvas() {
   const pts = figurePoints();
   const CRS = L.CRS.EPSG3857;
-  // Emprise de la figure en pixels « monde » au zoom 19
-  const Z0 = 19;
+  const Z0 = 19; // pixels « monde » au zoom 19
+  const th = pdfUpBearing() * Math.PI / 180, cosT = Math.cos(th), sinT = Math.sin(th);
   const P = pts.map(p => CRS.latLngToPoint(L.latLng(p.lat, p.lng), Z0));
-  let minX = Math.min(...P.map(p => p.x)), maxX = Math.max(...P.map(p => p.x));
-  let minY = Math.min(...P.map(p => p.y)), maxY = Math.max(...P.map(p => p.y));
+  const c0 = { x: P.reduce((a, p) => a + p.x, 0) / P.length, y: P.reduce((a, p) => a + p.y, 0) / P.length };
+  // Rotation monde → page : le cap « th » pointe vers le haut de la page
+  const rot = q => { const dx = q.x - c0.x, dy = q.y - c0.y; return { x: dx * cosT + dy * sinT, y: -dx * sinT + dy * cosT }; };
+  const unrot = r => ({ x: c0.x + r.x * cosT - r.y * sinT, y: c0.y + r.x * sinT + r.y * cosT });
+  const R = P.map(rot);
+  const minX = Math.min(...R.map(p => p.x)), maxX = Math.max(...R.map(p => p.x));
+  const minY = Math.min(...R.map(p => p.y)), maxY = Math.max(...R.map(p => p.y));
   const fw = maxX - minX, fh = maxY - minY;
-  const landscape = fw >= fh;
-  const W = landscape ? 3508 : 2480, H = landscape ? 2480 : 3508; // A4 à 300 dpi
-  const fs = landscape ? 12 : 13, uu = W / 1000, lh = fs * 1.5 * uu; // police et interligne du bandeau
+  const landscape = true; // toujours en paysage
+  const W = 3508, H = 2480; // A4 paysage à 300 dpi
+  const fs = 12, uu = W / 1000, lh = fs * 1.5 * uu; // police et interligne du bandeau
   const band = Math.round((Math.max(5, 2.6 + configs().length) + 2.2) * lh); // bandeau d'informations en bas
-  const padX = 0.14, padY = 0.07; // marge latérale plus large pour les libellés
-  // Échelle : la figure tient dans la zone au-dessus du bandeau, avec une marge
+  const padX = 0.14, padY = 0.08; // marge latérale plus large pour les libellés
   const availW = W * (1 - 2 * padX), availH = (H - band) * (1 - 2 * padY);
-  const s = Math.min(availW / Math.max(fw, 1), availH / Math.max(fh, 1)); // px canvas par px monde z19
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  const ox = W / 2 - cx * s, oy = (H - band) / 2 - cy * s; // origine : monde z19 → canvas
-  const toC = ll => { const q = CRS.latLngToPoint(L.latLng(ll.lat, ll.lng), Z0); return { x: q.x * s + ox, y: q.y * s + oy }; };
+  const s = Math.min(availW / Math.max(fw, 1), availH / Math.max(fh, 1)); // px page par px monde z19
+  const cxr = (minX + maxX) / 2, cyr = (minY + maxY) / 2, mapCY = (H - band) / 2;
+  const toPage = r => ({ x: W / 2 + (r.x - cxr) * s, y: mapCY + (r.y - cyr) * s });
+  const toC = ll => toPage(rot(CRS.latLngToPoint(L.latLng(ll.lat, ll.lng), Z0)));
+  const pageAngle = deg => deg * Math.PI / 180 - th; // un cap réel → angle sur la page (0 = haut)
 
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const g = cv.getContext('2d');
   g.fillStyle = '#2b2b2b'; g.fillRect(0, 0, W, H);
 
-  // Choix du zoom des images : assez fin pour la résolution, au plus 19
+  // Images satellite : zoom assez fin pour la résolution, au plus 19
   let z = Z0;
-  while (z > 1 && s * Math.pow(2, Z0 - z) < 1) z--; // une tuile à z doit faire ≥ 256 px à l'écran… ou presque
+  while (z > 1 && s * Math.pow(2, Z0 - z) < 1) z--;
   const f = Math.pow(2, Z0 - z); // 1 px à z = f px à z19
-  const worldLeft = (0 - ox) / s / f, worldTop = (0 - oy) / s / f, worldRight = (W - ox) / s / f, worldBottom = (H - oy) / s / f;
-  const t0x = Math.floor(worldLeft / 256), t1x = Math.floor(worldRight / 256), t0y = Math.floor(worldTop / 256), t1y = Math.floor(worldBottom / 256);
+  // Emprise monde des 4 coins de la page (la page est tournée)
+  const corners = [[0, 0], [W, 0], [0, H], [W, H]].map(([X, Y]) => unrot({ x: (X - W / 2) / s + cxr, y: (Y - mapCY) / s + cyr }));
+  const wx0 = Math.min(...corners.map(p => p.x)) / f, wx1 = Math.max(...corners.map(p => p.x)) / f;
+  const wy0 = Math.min(...corners.map(p => p.y)) / f, wy1 = Math.max(...corners.map(p => p.y)) / f;
   const jobs = [];
   let fails = 0;
-  for (let tx = t0x; tx <= t1x; tx++) for (let ty = t0y; ty <= t1y; ty++) jobs.push({ tx, ty });
+  for (let tx = Math.floor(wx0 / 256); tx <= Math.floor(wx1 / 256); tx++)
+    for (let ty = Math.floor(wy0 / 256); ty <= Math.floor(wy1 / 256); ty++) jobs.push({ tx, ty });
+  g.save();
+  g.translate(W / 2, mapCY); g.scale(s, s); g.translate(-cxr, -cyr); g.rotate(-th); g.translate(-c0.x, -c0.y);
   const run = async () => {
     while (jobs.length) {
       const { tx, ty } = jobs.shift();
       try {
-        const blob = await getTileBlob(tileUrl(z, tx, ty));
-        const img = await createImageBitmap(blob);
-        const x = tx * 256 * f * s + ox, y = ty * 256 * f * s + oy, size = 256 * f * s;
-        g.drawImage(img, x, y, size + 0.6, size + 0.6);
+        const img = await createImageBitmap(await getTileBlob(tileUrl(z, tx, ty)));
+        const size = 256 * f;
+        g.drawImage(img, tx * size, ty * size, size + 0.5 * f, size + 0.5 * f);
       } catch (e) { fails++; }
     }
   };
   await Promise.all(Array.from({ length: 6 }, run));
+  g.restore();
 
   // ---- Tracé ----
   const u = W / 1000; // unité de taille relative à la page
@@ -557,7 +585,7 @@ async function renderPdfCanvas() {
       const st = Geo.tickSteps(R / (u * 1.4)) || { label: 90, minor: null };
       g.lineWidth = 1.4 * u;
       for (let deg = 0; deg < 360; deg += (st.minor || st.label)) {
-        const major = deg % st.label === 0, a = deg * Math.PI / 180, l = (major ? 12 : 6) * u;
+        const major = deg % st.label === 0, a = pageAngle(deg), l = (major ? 12 : 6) * u;
         g.beginPath(); g.moveTo(c.x + R * Math.sin(a), c.y - R * Math.cos(a)); g.lineTo(c.x + (R - l) * Math.sin(a), c.y - (R - l) * Math.cos(a)); g.stroke();
         if (major) {
           const card = { 0: ' N', 90: ' E', 180: ' S', 270: ' O' }[deg] || '';
@@ -601,10 +629,12 @@ async function renderPdfCanvas() {
   dot(current.gateB, GATE_COLOR, 9, 'Porte B');
 
   // ---- Flèche du nord (haut droite) ----
-  const nx = W - 50 * u, ny = 70 * u;
-  g.save(); g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(nx, ny, 34 * u, 0, 2 * Math.PI); g.fill();
-  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(nx, ny - 26 * u); g.lineTo(nx - 12 * u, ny + 14 * u); g.lineTo(nx, ny + 6 * u); g.lineTo(nx + 12 * u, ny + 14 * u); g.closePath(); g.fill(); g.restore();
-  shadowText('N', nx, ny + 24 * u, '#fff', 12, 'center');
+  const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)
+  g.save(); g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.arc(nx, ny, 40 * u, 0, 2 * Math.PI); g.fill();
+  g.translate(nx, ny); g.rotate(na);
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(0, -30 * u); g.lineTo(-12 * u, 12 * u); g.lineTo(0, 4 * u); g.lineTo(12 * u, 12 * u); g.closePath(); g.fill();
+  g.restore();
+  shadowText('N', nx + Math.sin(na) * 52 * u, ny - Math.cos(na) * 52 * u, '#fff', 13, 'center');
 
   // ---- Échelle graphique (sur la photo, juste au-dessus du bandeau) ----
   const by = H - band;

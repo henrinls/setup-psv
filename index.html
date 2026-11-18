@@ -27,6 +27,15 @@
 
 <div id="banner" class="hidden"></div>
 
+<nav id="quick">
+  <button id="qTurnA" class="qa" title="Sens du virage depuis la porte A"></button>
+  <button id="qShowA" class="qa" title="Afficher la configuration A">A</button>
+  <button id="qTurnB" class="qb" title="Sens du virage depuis la porte B"></button>
+  <button id="qShowB" class="qb" title="Afficher la configuration B">B</button>
+  <button id="qTicks" title="Graduations en degrés">0°</button>
+  <button id="qRings" title="Anneaux 1 m/s">◎</button>
+</nav>
+
 <div id="legend"></div>
 
 <section id="sheet" class="hidden">
@@ -49,19 +58,6 @@
         <button data-rot="1">+1°</button>
         <button data-rot="5">+5°</button>
       </div>
-    </div>
-
-    <h3>Configurations affichées</h3>
-    <div class="row seg3" id="showSeg">
-      <button data-show="A">Porte A</button>
-      <button data-show="AB">Les deux</button>
-      <button data-show="B">Porte B</button>
-    </div>
-    <div class="grid2">
-      <div><label>Virage depuis la porte A</label>
-        <div class="seg" id="turnA"><button data-turn="G">↺ Gauche</button><button data-turn="D">↻ Droite</button></div></div>
-      <div><label>Virage depuis la porte B</label>
-        <div class="seg" id="turnB"><button data-turn="G">↺ Gauche</button><button data-turn="D">↻ Droite</button></div></div>
     </div>
 
     <h3>Temps du virage</h3>
@@ -91,13 +87,9 @@
     </div>
     <p class="hint">Perpendiculaire à l'axe, venant de l'extérieur et dirigée vers l'axe ; elle finit au point de setup.</p>
 
-    <h3>Affichage</h3>
-    <label class="check"><input type="checkbox" id="p_ticks"> Graduations en degrés sur les cercles</label>
-    <label class="check"><input type="checkbox" id="p_rings"> Anneaux intermédiaires (1 m/s)</label>
-
     <h3>Export</h3>
-    <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4, nord en haut)</button></div>
-    <p class="hint">Le PDF reprend ce qui est affiché (configurations, graduations, anneaux) et tous tes réglages.</p>
+    <div class="row"><button id="btnPdf" class="wide primary">📄 Exporter en PDF (A4 paysage)</button></div>
+    <p class="hint">Toujours en paysage. La page est tournée pour que la branche d'approche monte vers le haut ; le nord est indiqué dans un coin. Le PDF reprend ce qui est affiché et tous tes réglages.</p>
   </div>
 
   <div id="tab-zones" class="tab hidden">
