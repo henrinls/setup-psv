@@ -30,8 +30,8 @@ label{font-size:12px;color:#aaa;display:block;margin-bottom:3px}
 .check{display:flex;gap:8px;align-items:center;font-size:14px;color:#ddd;margin:6px 0}.check input{width:20px;height:20px}
 ul{list-style:none;padding:0;margin:0}
 #zoneList li{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid #262626}
-#zoneList li.cur .zn{color:#ffd400}
-#zoneList .zn{flex:1}
+#zoneList li.cur .zn{color:#ffd400;font-weight:700}
+#zoneList .zn{flex:1;cursor:pointer;padding:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .search{display:flex;gap:6px}
 #searchResults .res{width:100%;text-align:left;margin:3px 0;background:#202020;font-size:13px}
 #ioText{min-height:90px;margin-top:6px}
@@ -83,3 +83,4 @@ button.danger{border-color:#a33;color:#ff8a8a}
 #top .leftcol{display:flex;flex-direction:column;align-items:flex-start;gap:7px;pointer-events:none}#top .leftcol>*{pointer-events:auto}
 #zoneList .zhandle{touch-action:none;cursor:grab;font-size:22px;color:#888;padding:6px 10px 6px 2px;user-select:none;-webkit-user-select:none}
 #zoneList li.zdrag{position:relative;z-index:5;background:#2a2a2a;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+#zoneList .zoff{display:inline-flex;align-items:center;gap:4px;color:#7fc8ff;font-weight:400}#zoneList .zoffdel{padding:2px 7px;font-size:13px;min-height:0}

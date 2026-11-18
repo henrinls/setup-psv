@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.4.1';
+const VERSION = '3.5.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -629,8 +629,16 @@ function renderZones() {
   zones.forEach(z => {
     const li = document.createElement('li');
     li.className = z.id === current.id ? 'cur' : ''; li.dataset.id = z.id;
-    li.innerHTML = `<span class="zhandle" title="Glisser pour réordonner">≡</span><span class="zn">${esc(z.name)}${z.offline ? ' <small>· hors-ligne</small>' : ''}</span>`;
-    const open = document.createElement('button'); open.textContent = 'Ouvrir'; open.onclick = () => loadZone(z.id);
+    li.innerHTML = `<span class="zhandle" title="Glisser pour réordonner">≡</span><span class="zn">${esc(z.name)}</span>`;
+    // Appui sur le nom = ouvrir la zone (carte centrée et cadrée comme ⤢)
+    li.querySelector('.zn').onclick = () => loadZone(z.id);
+    if (z.offline) {
+      const off = document.createElement('span'); off.className = 'zoff';
+      off.innerHTML = `<small>hors-ligne</small>`;
+      const rm = document.createElement('button'); rm.className = 'zoffdel'; rm.textContent = '🗑'; rm.title = 'Supprimer les photos hors-ligne';
+      rm.onclick = e => { e.stopPropagation(); removeOffline(z.id); };
+      off.append(rm); li.querySelector('.zn').append(off);
+    }
     const ren = document.createElement('button'); ren.textContent = '✎'; ren.onclick = async () => {
       const n = await ask('Nouveau nom :', z.name); if (!n) return;
       z.name = n; if (current.id === z.id) current.name = n; store.set('psv.zones', zones); persist(); fillInputs(); renderZones();
@@ -641,7 +649,7 @@ function renderZones() {
       if (current.id === z.id) { current.id = null; persist(); fillInputs(); }
       renderZones();
     };
-    li.append(open, ren, del); ul.append(li);
+    li.append(ren, del); ul.append(li);
     zoneReorder(li, li.querySelector('.zhandle'));
   });
   $('offlineStatus').textContent = current.offline ? `Photo enregistrée hors-ligne le ${current.offline}.` : '';
@@ -683,7 +691,7 @@ function loadZone(id) {
   resetGateMarkers(); placing = null; setBanner(null);
   map.setBearing(current.bearing || 0);
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
-  fillInputs(); if (hasGates()) fitFigure(); persist(); redraw(); closeSheet();
+  closeSheet(); fillInputs(); redraw(); if (hasGates()) fitFigure(); persist();
 }
 // Enregistrer : une zone pas encore enregistrée devient une NOUVELLE entrée (on n'écrase jamais une autre zone) ;
 // une zone déjà enregistrée est simplement mise à jour (elle l'est déjà à chaque modification).
@@ -806,12 +814,31 @@ function tilesAround(center, radiusM, zmin, zmax) {
   }
   return list;
 }
+// Photos gardées hors-ligne pour une zone : autour du milieu du couloir (700 m en détail, 2,5 km en large)
+function offlineTiles(z) {
+  const center = z.gateA && z.gateB ? { lat: (z.gateA.lat + z.gateB.lat) / 2, lng: (z.gateA.lng + z.gateB.lng) / 2 } : z.center;
+  return [...new Set(tilesAround(center, 700, 12, 19).concat(tilesAround(center, 2500, 12, 16)))];
+}
+// Retirer le hors-ligne d'une zone : on efface ses photos, sauf celles qui servent à une autre zone gardée hors-ligne
+async function removeOffline(id) {
+  const z = id === current.id ? current : zones.find(x => x.id === id); if (!z) return;
+  if (!(await ask(`Supprimer les photos hors-ligne de « ${z.name} » ? La zone reste enregistrée, la carte ne s'affichera plus qu'avec du réseau.`))) return;
+  const keep = new Set();
+  zones.filter(x => x.id !== id && x.offline).forEach(x => offlineTiles(x).forEach(u => keep.add(u)));
+  let n = 0;
+  if ('caches' in window) {
+    const c = await caches.open(TILE_CACHE);
+    for (const u of offlineTiles(z)) if (!keep.has(u) && await c.delete(u)) n++;
+  }
+  z.offline = null;
+  const i = zones.findIndex(x => x.id === id); if (i >= 0) zones[i].offline = null;
+  if (current.id === id) current.offline = null;
+  store.set('psv.zones', zones); persist(); renderZones();
+  toast(`Photos hors-ligne supprimées (${n})`);
+}
 $('btnOffline').addEventListener('click', async () => {
   if (!('caches' in window)) { toast('Hors-ligne non pris en charge ici'); return; }
-  const center = hasGates()
-    ? { lat: (current.gateA.lat + current.gateB.lat) / 2, lng: (current.gateA.lng + current.gateB.lng) / 2 }
-    : map.getCenter();
-  const uniq = [...new Set(tilesAround(center, 700, 12, 19).concat(tilesAround(center, 2500, 12, 16)))];
+  const uniq = hasGates() ? offlineTiles(current) : [...new Set(tilesAround(map.getCenter(), 700, 12, 19).concat(tilesAround(map.getCenter(), 2500, 12, 16)))];
   if (!(await ask(`Télécharger ${uniq.length} images (environ ${Math.round(uniq.length * 25 / 1024)} Mo) autour ${hasGates() ? 'du couloir' : 'du centre de la carte'} ?`))) return;
   let done = 0, fail = 0; const st = $('offlineStatus'), total = uniq.length;
   const worker = async () => {
@@ -822,7 +849,7 @@ $('btnOffline').addEventListener('click', async () => {
     }
   };
   await Promise.all(Array.from({ length: 6 }, worker));
-  current.offline = new Date().toLocaleDateString('fr-FR'); persist();
+  current.offline = new Date().toLocaleDateString('fr-FR'); persist(); renderZones();
   st.textContent = fail ? `Terminé avec ${fail} échecs (relance pour compléter).` : `Zone disponible hors-ligne (${done} images).`;
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 });
