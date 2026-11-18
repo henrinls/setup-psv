@@ -71,3 +71,6 @@ button:disabled{opacity:.6}
 #measureBox small{color:#aaa;font-size:12px}
 .measlbl span{position:absolute;transform:translate(-50%,-130%);white-space:nowrap;background:rgba(0,0,0,.75);color:#00e5ff;font-weight:700;font-size:13px;padding:3px 7px;border-radius:7px}
 .measpt span{display:block;width:16px;height:16px;margin:9px;border-radius:50%;background:#00e5ff;border:2px solid #fff;box-shadow:0 0 0 1.5px #000}
+.gate,.measpt{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.gate.lifting .gsvg{transform:scale(1.35);filter:drop-shadow(0 0 4px #fff)}
+.measpt.lifting span{transform:scale(1.5);box-shadow:0 0 0 3px #fff}

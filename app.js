@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.7.3';
+const VERSION = '2.8.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -224,7 +224,54 @@ function drawWindCircle(center, radius, color) {
   L.polyline(segs, { color, weight: 1.5, interactive: false }).addTo(grads);
 }
 
-const isDragging = m => !!(m && m.dragging && m.dragging._draggable && m.dragging._draggable._moving);
+const isDragging = m => !!(m && (m._lpDragging || (m.dragging && m.dragging._draggable && m.dragging._draggable._moving)));
+
+// ---------- Appui long pour déplacer un point (portes, mesure) ----------
+// Un glissement immédiat déplace la carte ; il faut rester appuyé HOLD_MS sans bouger pour « soulever » le point.
+const HOLD_MS = 450, MOVE_TOL = 10;
+let suppressClickUntil = 0;
+function longPressDrag(marker, onMove, onEnd) {
+  const el = marker.getElement(); if (!el) return;
+  let timer = null, start = null;
+  const pt = e => (e.touches ? (e.touches[0] || e.changedTouches[0]) : e);
+  const off = () => {
+    document.removeEventListener('touchmove', move); document.removeEventListener('mousemove', move);
+    document.removeEventListener('touchend', up); document.removeEventListener('touchcancel', up); document.removeEventListener('mouseup', up);
+  };
+  const down = e => {
+    if (e.touches && e.touches.length > 1) return; // deux doigts : c'est pour la carte
+    const p = pt(e); start = { x: p.clientX, y: p.clientY };
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null; marker._lpDragging = true;
+      const d = map.dragging && map.dragging._draggable; if (d) d.finishDrag(true); // stoppe le déplacement de carte commencé
+      map.dragging.disable(); el.classList.add('lifting');
+      if (navigator.vibrate) try { navigator.vibrate(25); } catch (er) {}
+    }, HOLD_MS);
+    document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('mousemove', move);
+    document.addEventListener('touchend', up); document.addEventListener('touchcancel', up); document.addEventListener('mouseup', up);
+  };
+  const move = e => {
+    if (e.touches && e.touches.length > 1) { clearTimeout(timer); timer = null; return; }
+    const p = pt(e); if (!p) return;
+    if (!marker._lpDragging) {
+      if (timer && Math.hypot(p.clientX - start.x, p.clientY - start.y) > MOVE_TOL) { clearTimeout(timer); timer = null; }
+      return;
+    }
+    e.preventDefault();
+    const r = map.getContainer().getBoundingClientRect();
+    const ll = map.containerPointToLatLng([p.clientX - r.left, p.clientY - r.top]);
+    marker.setLatLng(ll); onMove({ lat: ll.lat, lng: ll.lng });
+  };
+  const up = () => {
+    clearTimeout(timer); timer = null; off();
+    if (marker._lpDragging) {
+      marker._lpDragging = false; el.classList.remove('lifting'); map.dragging.enable();
+      suppressClickUntil = Date.now() + 400; onEnd();
+    }
+  };
+  el.addEventListener('touchstart', down, { passive: true }); el.addEventListener('mousedown', down);
+}
 // Icône des portes : petit segment perpendiculaire à l'axe de poser, avec un drapeau debout à chaque bout
 // (drapeaux toujours droits à l'écran, le segment suit l'orientation de l'axe et de la carte).
 function gateSvg(theta) { // theta : angle à l'écran du sens du poser (0 = haut, sens horaire)
@@ -251,10 +298,9 @@ function rotateGateIcons() {
 }
 function gateLabel(key) { return showLabels() && hasGates() ? `Portes ${hdg(headingOf(key))}` : ''; }
 function makeGateMarker(key) {
-  const m = L.marker(LL(current['gate' + key]), { draggable: true, icon: gateIcon(gateLabel(key)), zIndexOffset: 1000 }).addTo(map);
+  const m = L.marker(LL(current['gate' + key]), { draggable: false, icon: gateIcon(gateLabel(key)), zIndexOffset: 1000 }).addTo(map);
   m._psvLabel = gateLabel(key);
-  m.on('drag', e => { current['gate' + key] = { lat: e.latlng.lat, lng: e.latlng.lng }; drawLight(); });
-  m.on('dragend', () => { persist(); redraw(); });
+  longPressDrag(m, ll => { current['gate' + key] = ll; drawLight(); }, () => { persist(); redraw(); });
   return m;
 }
 function syncGate(m, key) {
@@ -400,8 +446,8 @@ $('qMeasure').addEventListener('click', () => {
 // Points de mesure déplaçables (comme les portes) : la mesure se met à jour pendant le glissement
 const measIcon = L.divIcon({ className: 'measpt', iconSize: [34, 34], iconAnchor: [17, 17], html: '<span></span>' });
 function measMarker(key) {
-  const m = L.marker(LL(meas[key]), { draggable: true, icon: measIcon, zIndexOffset: 900 }).addTo(measLayer);
-  m.on('drag', e => { meas[key] = { lat: e.latlng.lat, lng: e.latlng.lng }; updateMeasure(); });
+  const m = L.marker(LL(meas[key]), { draggable: false, icon: measIcon, zIndexOffset: 900 }).addTo(measLayer);
+  longPressDrag(m, ll => { meas[key] = ll; updateMeasure(); }, () => {});
   return m;
 }
 function updateMeasure() {
@@ -416,7 +462,7 @@ function updateMeasure() {
     meas.halo.setLatLngs([LL(a), LL(b)]); meas.line.setLatLngs([LL(a), LL(b)]); meas.lbl.setLatLng(mid);
     const el = meas.lbl.getElement && meas.lbl.getElement(); if (el) el.querySelector('span').textContent = txt;
   }
-  measBox(`<b>Cap ${hdg(c)} · ${fmtDist(d)}</b><br><small>Fais glisser les points pour ajuster · 📏 = effacer</small>`);
+  measBox(`<b>Cap ${hdg(c)} · ${fmtDist(d)}</b><br><small>Appui long sur un point puis glisse pour ajuster · 📏 = effacer</small>`);
 }
 function measureClick(p) {
   if (!meas.a) { meas.a = p; meas.ma = measMarker('a'); measBox('Mesure : touche le <b>2e point</b>'); return; }
@@ -424,6 +470,7 @@ function measureClick(p) {
   // une fois les deux points posés, on les déplace au doigt ; un appui sur la carte ne fait rien
 }
 map.on('click', e => {
+  if (Date.now() < suppressClickUntil) return; // fin d'un déplacement de point : pas un appui
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
@@ -439,6 +486,38 @@ map.on('click', e => {
   syncPlaceBtn(); persist(); redraw();
 });
 map.on('zoomend', redraw);
+(function delayTouchRotate() {
+  const TG = map.touchGestures; if (!TG || !TG._onTouchStart) return;
+  const ROT_HOLD_MS = 300, ROT_TOL = 12; // doigts quasi immobiles pendant 0,3 s → la rotation s'active
+  const cp = t => map.mouseEventToContainerPoint(t);
+  const origStart = TG._onTouchStart, origMove = TG._onTouchMove;
+  TG._onTouchStart = function (e) {
+    origStart.call(this, e);
+    this._rotPending = null;
+    if (this._rotating) { // le plug-in voulait tourner tout de suite : on met en attente
+      this._rotating = false;
+      this._rotPending = { t: Date.now(), p1: cp(e.touches[0]), p2: cp(e.touches[1]) };
+    }
+  };
+  TG._onTouchMove = function (e) {
+    const rp = this._rotPending;
+    if (rp && e.touches && e.touches.length === 2) {
+      const p1 = cp(e.touches[0]), p2 = cp(e.touches[1]);
+      const d = Math.max(p1.distanceTo(rp.p1), p2.distanceTo(rp.p2));
+      if (d > ROT_TOL) {
+        if (Date.now() - rp.t >= ROT_HOLD_MS) { // doigts restés immobiles assez longtemps : on tourne
+          const v = rp.p1.subtract(rp.p2);
+          this._startTheta = Math.atan(v.x / v.y);
+          this._startBearing = map.getBearing() + (v.y < 0 ? 180 : 0);
+          this._rotating = true;
+        }
+        this._rotPending = null; // sinon : déplacement / zoom à deux doigts, sans rotation
+      }
+    }
+    return origMove.call(this, e);
+  };
+  TG.disable(); TG.enable(); // ré-abonne les écouteurs aux versions modifiées
+})();
 // Rotation du téléphone : Leaflet doit relire la taille de l'écran
 ['resize', 'orientationchange'].forEach(ev => window.addEventListener(ev, () => setTimeout(() => map.invalidateSize({ animate: false }), 250)));
 
