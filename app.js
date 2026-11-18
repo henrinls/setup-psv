@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.5.0';
+const VERSION = '3.6.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -56,6 +56,8 @@ profile.legLen = legLenOf(profile); store.set('psv.profile', profile);
 store.set('psv.profile', profile);
 function applyProfile(z) { if (z && z.params) PROFILE_KEYS.forEach(k => { z.params[k] = profile[k]; }); }
 applyProfile(current); zones.forEach(applyProfile); store.set('psv.zones', zones);
+// Plus de bouton « Enregistrer » : une ancienne zone en cours, jamais enregistrée mais avec ses portes, rejoint la liste
+if (!current.id && current.gateA && current.gateB) { current.id = 'z' + Date.now(); zones.push(clone(current)); store.set('psv.zones', zones); store.set('psv.current', current); }
 
 function newZone(center) {
   return upgrade({
@@ -632,13 +634,19 @@ function renderZones() {
     li.innerHTML = `<span class="zhandle" title="Glisser pour réordonner">≡</span><span class="zn">${esc(z.name)}</span>`;
     // Appui sur le nom = ouvrir la zone (carte centrée et cadrée comme ⤢)
     li.querySelector('.zn').onclick = () => loadZone(z.id);
-    if (z.offline) {
-      const off = document.createElement('span'); off.className = 'zoff';
+    const off = document.createElement('span'); off.className = 'zoff';
+    if (dlProgress[z.id]) off.innerHTML = `<small>⬇︎ ${dlProgress[z.id]}</small>`;
+    else if (z.offline) {
       off.innerHTML = `<small>hors-ligne</small>`;
       const rm = document.createElement('button'); rm.className = 'zoffdel'; rm.textContent = '🗑'; rm.title = 'Supprimer les photos hors-ligne';
       rm.onclick = e => { e.stopPropagation(); removeOffline(z.id); };
-      off.append(rm); li.querySelector('.zn').append(off);
+      off.append(rm);
+    } else if (z.gateA && z.gateB) {
+      const dl = document.createElement('button'); dl.className = 'zoffdel'; dl.textContent = '⬇︎ hors-ligne'; dl.title = 'Télécharger les photos pour le hors-ligne';
+      dl.onclick = e => { e.stopPropagation(); downloadOffline(z.id); };
+      off.append(dl);
     }
+    li.querySelector('.zn').append(off);
     const ren = document.createElement('button'); ren.textContent = '✎'; ren.onclick = async () => {
       const n = await ask('Nouveau nom :', z.name); if (!n) return;
       z.name = n; if (current.id === z.id) current.name = n; store.set('psv.zones', zones); persist(); fillInputs(); renderZones();
@@ -646,13 +654,15 @@ function renderZones() {
     const del = document.createElement('button'); del.textContent = '🗑'; del.onclick = async () => {
       if (!(await ask(`Supprimer « ${z.name} » ?`))) return;
       zones = zones.filter(x => x.id !== z.id); store.set('psv.zones', zones);
-      if (current.id === z.id) { current.id = null; persist(); fillInputs(); }
+      if (current.id === z.id) { // la zone affichée disparaît : carte vide, au même endroit
+        current = newZone(map.getCenter()); applyProfile(current); current.zoom = map.getZoom();
+        resetGateMarkers(); placing = null; persist(); fillInputs(); redraw();
+      }
       renderZones();
     };
     li.append(ren, del); ul.append(li);
     zoneReorder(li, li.querySelector('.zhandle'));
   });
-  $('offlineStatus').textContent = current.offline ? `Photo enregistrée hors-ligne le ${current.offline}.` : '';
 }
 // Réordonner les zones : on tient la poignée ≡ et on glisse la ligne vers le haut ou le bas
 function zoneReorder(li, handle) {
@@ -693,23 +703,17 @@ function loadZone(id) {
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
   closeSheet(); fillInputs(); redraw(); if (hasGates()) fitFigure(); persist();
 }
-// Enregistrer : une zone pas encore enregistrée devient une NOUVELLE entrée (on n'écrase jamais une autre zone) ;
-// une zone déjà enregistrée est simplement mise à jour (elle l'est déjà à chaque modification).
-$('btnSaveZone').addEventListener('click', async () => {
-  if (!hasGates()) return toast('Place d\'abord les deux portes');
-  if (current.id && zones.some(z => z.id === current.id)) { persist(); renderZones(); return toast(`« ${current.name} » est enregistrée`); }
-  const n = await ask('Nom de la zone (ex. Bouloc) :', ''); if (!n) return;
-  current.name = n; current.id = 'z' + Date.now(); current.updated = Date.now();
-  zones.push(clone(current)); store.set('psv.zones', zones); persist(); fillInputs(); renderZones(); toast(`Zone « ${n} » enregistrée`);
-});
 // Nouvelle zone : on choisit d'abord où aller (ma position ou recherche), puis on place les portes
-function startNewZone(center, zoom) {
+async function startNewZone(center, zoom) {
   $('nzDlg').classList.add('hidden');
+  const n = await ask('Nom de la nouvelle zone (ex. Bouloc) :', ''); if (!n) return;
   current = newZone(center); applyProfile(current); current.zoom = zoom || 17;
+  current.name = n; current.id = 'z' + Date.now(); current.updated = Date.now();
+  zones.push(clone(current)); store.set('psv.zones', zones);
   resetGateMarkers(); stopMeasure();
   map.setView([center.lat, center.lng], current.zoom);
   placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
-  toast('Place la porte 1, puis la porte 2, puis 💾 Enregistrer (☰)');
+  toast(`« ${n} » créée : place la porte 1 puis la porte 2`);
 }
 $('btnNewZone').addEventListener('click', () => { $('searchResults').innerHTML = ''; $('nzDlg').classList.remove('hidden'); });
 $('nzCancel').addEventListener('click', () => $('nzDlg').classList.add('hidden'));
@@ -836,23 +840,31 @@ async function removeOffline(id) {
   store.set('psv.zones', zones); persist(); renderZones();
   toast(`Photos hors-ligne supprimées (${n})`);
 }
-$('btnOffline').addEventListener('click', async () => {
+const dlProgress = {}; // id de zone → « 120/1193 » pendant le téléchargement
+async function downloadOffline(id) {
   if (!('caches' in window)) { toast('Hors-ligne non pris en charge ici'); return; }
-  const uniq = hasGates() ? offlineTiles(current) : [...new Set(tilesAround(map.getCenter(), 700, 12, 19).concat(tilesAround(map.getCenter(), 2500, 12, 16)))];
-  if (!(await ask(`Télécharger ${uniq.length} images (environ ${Math.round(uniq.length * 25 / 1024)} Mo) autour ${hasGates() ? 'du couloir' : 'du centre de la carte'} ?`))) return;
-  let done = 0, fail = 0; const st = $('offlineStatus'), total = uniq.length;
+  if (dlProgress[id]) return;
+  const z = id === current.id ? current : zones.find(x => x.id === id); if (!z || !z.gateA || !z.gateB) return;
+  const uniq = offlineTiles(z), total = uniq.length;
+  if (!(await ask(`Télécharger les photos de « ${z.name} » pour le hors-ligne : ${total} images, environ ${Math.round(total * 25 / 1024)} Mo ?`))) return;
+  let done = 0, fail = 0; dlProgress[id] = `0/${total}`; renderZones();
   const worker = async () => {
     while (uniq.length) {
       const u = uniq.shift();
       try { await getTileBlob(u); } catch (e) { fail++; }
-      done++; if (done % 10 === 0) st.textContent = `Téléchargement… ${done}/${total}`;
+      done++; if (done % 20 === 0) { dlProgress[id] = `${done}/${total}`; renderZones(); }
     }
   };
   await Promise.all(Array.from({ length: 6 }, worker));
-  current.offline = new Date().toLocaleDateString('fr-FR'); persist(); renderZones();
-  st.textContent = fail ? `Terminé avec ${fail} échecs (relance pour compléter).` : `Zone disponible hors-ligne (${done} images).`;
+  delete dlProgress[id];
+  const date = new Date().toLocaleDateString('fr-FR');
+  const i = zones.findIndex(x => x.id === id); if (i >= 0) { zones[i].offline = date; store.set('psv.zones', zones); }
+  if (current.id === id) { current.offline = date; persist(); }
+  renderZones();
+  toast(fail ? `« ${z.name} » : ${fail} images manquées, relance plus tard pour compléter` : `« ${z.name} » disponible hors-ligne`);
+  if (fail) { if (i >= 0) zones[i].offline = null; if (current.id === id) current.offline = null; store.set('psv.zones', zones); persist(); renderZones(); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-});
+}
 
 // ---------- Export PDF ----------
 let jsPdfLoading = null;
