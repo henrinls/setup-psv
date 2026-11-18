@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=2.9.0">
+<link rel="stylesheet" href="style.css?v=2.10.0">
 </head>
 <body>
 <div id="map"></div>
@@ -44,7 +44,7 @@
 <div id="measureBox" class="hidden"></div>
 
 <section id="sheet" class="hidden">
-  <div class="grab"></div>
+  <div class="grab" id="grab"><span></span></div>
   <div class="tabs">
     <button data-tab="reglages" class="on">Réglages</button>
     <button data-tab="zones">Zones</button>
@@ -56,12 +56,19 @@
     <div class="row"><button id="btnPlaceGates" class="wide">📍 Placer les portes : touche un bout du couloir puis l'autre</button></div>
     <p class="hint" id="axisInfo"></p>
     <div class="row">
-      <label>Affiner l'axe (tourne la 2e porte autour de la 1re)</label>
+      <label>Cap 1re → 2e porte (°)</label>
       <div class="stepper">
-        <button data-rot="-5">−5°</button>
-        <button data-rot="-1">−1°</button>
-        <button data-rot="1">+1°</button>
-        <button data-rot="5">+5°</button>
+        <button data-rot="-5">−5</button><button data-rot="-1">−1</button>
+        <input id="c_heading" inputmode="decimal">
+        <button data-rot="1">+1</button><button data-rot="5">+5</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>Longueur du couloir (m)</label>
+      <div class="stepper">
+        <button data-len="-5">−5</button><button data-len="-1">−1</button>
+        <input id="c_len" inputmode="decimal">
+        <button data-len="1">+1</button><button data-len="5">+5</button>
       </div>
     </div>
 
@@ -144,9 +151,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=2.9.0"></script>
-<script src="vendor/leaflet-rotate.js?v=2.9.0"></script>
-<script src="geo.js?v=2.9.0"></script>
-<script src="app.js?v=2.9.0"></script>
+<script src="vendor/leaflet.js?v=2.10.0"></script>
+<script src="vendor/leaflet-rotate.js?v=2.10.0"></script>
+<script src="geo.js?v=2.10.0"></script>
+<script src="app.js?v=2.10.0"></script>
 </body>
 </html>

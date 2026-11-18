@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.9.0';
+const VERSION = '2.10.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -354,6 +354,10 @@ function updateAxisInfo() {
   $('axisInfo').textContent = hasGates()
     ? `Axes de poser : ${hdg(axisHeading())} et ${hdg((axisHeading() + 180) % 360)} · couloir ${Math.round(corridorLength())} m`
     : 'Portes pas encore placées.';
+  if (hasGates()) {
+    if (document.activeElement !== $('c_heading')) $('c_heading').value = Math.round(axisHeading()) % 360;
+    if (document.activeElement !== $('c_len')) $('c_len').value = Math.round(corridorLength());
+  }
 }
 
 // ---------- Interface ----------
@@ -405,13 +409,24 @@ $('qShowB').addEventListener('click', () => toggleShow('B'));
 $('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
 $('qRec').addEventListener('click', () => quick(() => { current.params.rec = !showRec(); }, () => showRec() ? 'Point de snap affiché' : 'Point de snap masqué'));
 $('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
-document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
+// Couloir : la 1re porte reste fixe, on place la 2e au cap et à la distance voulus
+function setCorridor(headingDeg, lengthM) {
   if (!hasGates()) return toast('Place d\'abord les deux portes');
-  const v = Geo.toLocal(current.gateA, current.gateB), d = Math.hypot(v.x, v.y);
-  const h = (axisHeading() + +b.dataset.rot) * Math.PI / 180;
+  const h = ((headingDeg % 360) + 360) % 360 * Math.PI / 180, d = Math.max(1, lengthM);
   current.gateB = Geo.fromLocal(current.gateA, { x: d * Math.sin(h), y: d * Math.cos(h) });
   persist(); redraw();
+}
+document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
+  if (hasGates()) setCorridor(Math.round(axisHeading()) + +b.dataset.rot, corridorLength());
 }));
+document.querySelectorAll('[data-len]').forEach(b => b.addEventListener('click', () => {
+  if (hasGates()) setCorridor(axisHeading(), Math.round(corridorLength()) + +b.dataset.len);
+}));
+const numIn = el => parseFloat(String(el.value).replace(',', '.'));
+$('c_heading').addEventListener('change', e => { const v = numIn(e.target); if (!isNaN(v) && hasGates()) setCorridor(v, corridorLength()); });
+$('c_len').addEventListener('change', e => { const v = numIn(e.target); if (!isNaN(v) && v > 0 && hasGates()) setCorridor(axisHeading(), v); });
+['c_heading', 'c_len'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); }));
+
 
 function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', !!placing); }
 $('btnPlaceGates').addEventListener('click', () => {
@@ -516,8 +531,25 @@ map.on('zoomend', redraw);
 // Rotation du téléphone : Leaflet doit relire la taille de l'écran
 ['resize', 'orientationchange'].forEach(ev => window.addEventListener(ev, () => setTimeout(() => map.invalidateSize({ animate: false }), 250)));
 
+let sheetSize = 'full';
+function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', sz === 'mini'); $('sheet').classList.toggle('full', sz === 'full'); }
+(function sheetGrab() {
+  const g = $('grab'); let y0 = null, moved = false;
+  const start = y => { y0 = y; moved = false; };
+  const end = y => {
+    if (y0 === null) return; const dy = y - y0; y0 = null;
+    if (Math.abs(dy) < 12) { setSheetSize(sheetSize === 'full' ? 'mini' : 'full'); return; } // simple toucher : bascule
+    if (dy < 0) setSheetSize('full');                                        // vers le haut : grand
+    else if (sheetSize === 'full') setSheetSize('mini');                     // vers le bas : réduit…
+    else closeSheet();                                                       // …puis fermé
+  };
+  g.addEventListener('touchstart', e => start(e.touches[0].clientY), { passive: true });
+  g.addEventListener('touchend', e => end(e.changedTouches[0].clientY));
+  g.addEventListener('mousedown', e => start(e.clientY));
+  window.addEventListener('mouseup', e => end(e.clientY));
+})();
 function openSheet(tab) {
-  $('sheet').classList.remove('hidden');
+  $('sheet').classList.remove('hidden'); setSheetSize(sheetSize);
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   ['reglages', 'zones'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
   if (tab === 'zones') renderZones();
