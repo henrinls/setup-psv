@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=2.6.2">
+<link rel="stylesheet" href="style.css?v=2.7.0">
 </head>
 <body>
 <div id="map"></div>
@@ -35,12 +35,13 @@
   <button id="qShowB" class="qb" title="Afficher la configuration de la 2e porte"></button>
   <button id="qTurnB" class="qb" title="Sens du virage depuis la 2e porte"></button>
   <button id="qRec" title="Afficher / masquer le point de snap et son cercle">Snap</button>
-  <button id="qLabels" title="Afficher / masquer les textes">Aa</button>
+  <button id="qMeasure" title="Mesurer cap et distance entre deux points">📏</button>
   <button id="qTicks" title="Graduations en degrés">0°</button>
   <button id="qRings" title="Anneaux 1 m/s">◎</button>
 </nav>
 
 <div id="legend"></div>
+<div id="measureBox" class="hidden"></div>
 
 <section id="sheet" class="hidden">
   <div class="grab"></div>
@@ -143,9 +144,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=2.6.2"></script>
-<script src="vendor/leaflet-rotate.js?v=2.6.2"></script>
-<script src="geo.js?v=2.6.2"></script>
-<script src="app.js?v=2.6.2"></script>
+<script src="vendor/leaflet.js?v=2.7.0"></script>
+<script src="vendor/leaflet-rotate.js?v=2.7.0"></script>
+<script src="geo.js?v=2.7.0"></script>
+<script src="app.js?v=2.7.0"></script>
 </body>
 </html>

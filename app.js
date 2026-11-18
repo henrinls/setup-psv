@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '2.6.2';
+const VERSION = '2.7.0';
 const TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
@@ -66,7 +66,7 @@ const hdg = h => String(Math.round(h) % 360).padStart(3, '0') + '°';
 function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h + 180) % 360; }
 function cfgName(c) { return `${hdg(c.heading)} ${c.turn}`; }
 function cfgNameKey(key) { return hasGates() ? `${hdg(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? '1re porte' : '2e porte'); }
-const showLabels = () => current.params.labels !== false;
+const showLabels = () => false; // textes sur les éléments : jamais affichés (demande d'Henri)
 const showRec = () => current.params.rec !== false; // point de snap + son cercle (le temps de recouvrement = du point de snap aux portes)
 
 // ---------- Figure (calcul pur, réutilisé par la carte et le PDF) ----------
@@ -327,7 +327,6 @@ function syncQuick() {
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
   $('qShowA').classList.toggle('on', sh !== 'B'); $('qShowB').classList.toggle('on', sh !== 'A');
   $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
-  $('qLabels').classList.toggle('on', showLabels());
   $('qRec').classList.toggle('on', showRec());
   $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
 }
@@ -344,7 +343,6 @@ $('qShowA').addEventListener('click', () => toggleShow('A'));
 $('qShowB').addEventListener('click', () => toggleShow('B'));
 $('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
 $('qRec').addEventListener('click', () => quick(() => { current.params.rec = !showRec(); }, () => showRec() ? 'Point de snap affiché' : 'Point de snap masqué'));
-$('qLabels').addEventListener('click', () => quick(() => { current.params.labels = !showLabels(); resetGateMarkers(); }, () => showLabels() ? 'Textes affichés' : 'Textes masqués'));
 $('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
 document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click', () => {
   if (!hasGates()) return toast('Place d\'abord les deux portes');
@@ -357,9 +355,43 @@ document.querySelectorAll('[data-rot]').forEach(b => b.addEventListener('click',
 function syncPlaceBtn() { $('btnPlaceGates').classList.toggle('on', !!placing); }
 $('btnPlaceGates').addEventListener('click', () => {
   if (placing && hasGates()) { placing = null; setBanner(null); syncPlaceBtn(); return; }
-  placing = 'A'; syncPlaceBtn(); setBanner('Touche la carte au début du couloir (1re porte).'); closeSheet();
+  stopMeasure(); placing = 'A'; syncPlaceBtn(); setBanner('Touche la carte au début du couloir (1re porte).'); closeSheet();
 });
+// ---------- Mesure : cap et distance entre deux points touchés (dans l'ordre) ----------
+const measLayer = L.layerGroup().addTo(map);
+const meas = { active: false, p1: null };
+function capDeg(a, b) { // cap initial (orthodromie) de a vers b, en degrés
+  const r = Math.PI / 180, f1 = a.lat * r, f2 = b.lat * r, dl = (b.lng - a.lng) * r;
+  const y = Math.sin(dl) * Math.cos(f2), x = Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+function fmtDist(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2).replace('.', ',')} km`; }
+function measBox(t) { const b = $('measureBox'); if (!t) b.classList.add('hidden'); else { b.innerHTML = t; b.classList.remove('hidden'); } }
+function stopMeasure() { meas.active = false; meas.p1 = null; measLayer.clearLayers(); measBox(null); $('qMeasure').classList.remove('on'); }
+$('qMeasure').addEventListener('click', () => {
+  if (meas.active || measLayer.getLayers().length) { stopMeasure(); return; }
+  if (placing) return toast('Termine d\'abord le placement des portes');
+  meas.active = true; meas.p1 = null; $('qMeasure').classList.add('on');
+  measBox('Mesure : touche le <b>1er point</b>');
+});
+const measDot = p => L.circleMarker(LL(p), { radius: 6, color: '#fff', weight: 2, fillColor: '#00e5ff', fillOpacity: 1, interactive: false });
+function measureClick(p) {
+  if (!meas.p1) {
+    measLayer.clearLayers(); meas.p1 = p; measDot(p).addTo(measLayer);
+    measBox('Mesure : touche le <b>2e point</b>');
+    return;
+  }
+  const a = meas.p1, b = p, d = map.distance(LL(a), LL(b)), c = capDeg(a, b);
+  L.polyline([LL(a), LL(b)], { color: '#000', weight: 5, opacity: .5, interactive: false }).addTo(measLayer);
+  L.polyline([LL(a), LL(b)], { color: '#00e5ff', weight: 3, dashArray: '8 6', interactive: false }).addTo(measLayer);
+  measDot(a).addTo(measLayer); measDot(b).addTo(measLayer);
+  L.marker([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2], { interactive: false, icon: L.divIcon({ className: 'measlbl', iconSize: [0, 0],
+    html: `<span>${hdg(c)} · ${fmtDist(d)}</span>` }) }).addTo(measLayer);
+  meas.p1 = null; // le prochain appui recommence une mesure
+  measBox(`<b>Cap ${hdg(c)} · ${fmtDist(d)}</b><br><small>Nouveau point = nouvelle mesure · 📏 = effacer</small>`);
+}
 map.on('click', e => {
+  if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
   if (placing === 'A') {
