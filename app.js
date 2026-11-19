@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.14.2';
+const VERSION = '3.15.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -249,7 +249,7 @@ function legLine2(c) { const p = current.params; return `cap ${hdg(c.geo.legHead
 
 function drawWindCircle(center, radius, color) { // graduations et anneaux 1 m/s supprimés (19/11/2026, jugés inutiles)
   if (!(radius > 0)) return;
-  L.circle(LL(center), { radius, color, weight: 1.6, fill: true, fillOpacity: .06, interactive: false }).addTo(fig);
+  L.circle(LL(center), { radius, color, weight: 1.6, fill: false, interactive: false }).addTo(fig); // contour seul, fond de carte non teinté
 }
 
 const isDragging = m => !!(m && (m._lpDragging || (m.dragging && m.dragging._draggable && m.dragging._draggable._moving)));
@@ -1111,8 +1111,8 @@ async function renderPdfCanvas() {
   const circle = (center, radius, color) => {
     if (!(radius > 0)) return;
     const c = toC(center), R = radius * pxPerM(center);
-    g.save(); g.strokeStyle = color; g.lineWidth = 2.6 * u; g.fillStyle = color; g.globalAlpha = .08;
-    g.beginPath(); g.arc(c.x, c.y, R, 0, 2 * Math.PI); g.fill(); g.globalAlpha = 1; g.stroke();
+    g.save(); g.strokeStyle = color; g.lineWidth = 2.6 * u;
+    g.beginPath(); g.arc(c.x, c.y, R, 0, 2 * Math.PI); g.stroke(); // contour seul, comme à l'écran
     g.restore();
   };
 
