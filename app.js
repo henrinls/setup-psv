@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.14.1';
+const VERSION = '3.14.2';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -381,9 +381,11 @@ function corridorHit() {
   const line = L.polyline([[0, 0], [0, 0]], { color: '#fff', weight: 30, opacity: 0, interactive: true, bubblingMouseEvents: true });
   const handle = { line, _lpDragging: false, getElement: () => line._path, setLatLng: () => {} };
   let ref = null, a0 = null, b0 = null;
-  corrHit = { line, handle, attached: false };
+  corrHit = { line, handle, attachedEl: null };
+  // Leaflet recrée l'élément <path> à chaque retour de la ligne sur la carte (nouvelle zone, autre zone, porte replacée) :
+  // on rebranche l'appui long sur le NOUVEL élément, sinon le milieu du couloir ne répond plus.
   corrHit.attach = () => {
-    if (corrHit.attached || !line._path) return; corrHit.attached = true;
+    if (!line._path || corrHit.attachedEl === line._path) return; corrHit.attachedEl = line._path;
     longPressDrag(handle, ll => {
       if (!ref) { ref = ll; a0 = current.gateA; b0 = current.gateB; return; }
       const d = Geo.toLocal(ref, ll);
