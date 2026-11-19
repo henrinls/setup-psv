@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.10.1';
+const VERSION = '3.11.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -854,18 +854,27 @@ async function doSearch() {
   const ul = $('searchResults'); ul.innerHTML = '';
   const c = parseCoords(q);
   if (c) { startNewZone(c, 17); return; }
-  ul.innerHTML = '<li class="mut">Recherche…</li>';
+  // 1) Clubs FFP enregistrés dans l'appli (sans réseau), proposés en premier
+  const clubs = typeof searchClubs === 'function' ? searchClubs(q) : [];
+  clubs.forEach(k => {
+    const li = document.createElement('li'); const b = document.createElement('button');
+    b.className = 'res club'; b.innerHTML = `<b>🪂 ${esc(k.n)}</b><br><small>Club FFP · ${esc(k.v)}</small>`;
+    b.onclick = () => startNewZone({ lat: k.lat, lng: k.lng }, 16);
+    li.append(b); ul.append(li);
+  });
+  // 2) Puis la recherche de lieux habituelle
+  const wait = document.createElement('li'); wait.className = 'mut'; wait.textContent = 'Recherche…'; ul.append(wait);
   try {
     const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&accept-language=fr&q=' + encodeURIComponent(q));
-    const js = await r.json(); ul.innerHTML = '';
-    if (!js.length) ul.innerHTML = '<li class="mut">Rien trouvé.</li>';
+    const js = await r.json(); wait.remove();
+    if (!js.length && !clubs.length) ul.innerHTML = '<li class="mut">Rien trouvé.</li>';
     js.forEach(x => {
       const li = document.createElement('li'); const b = document.createElement('button');
       b.className = 'res'; b.textContent = x.display_name;
       b.onclick = () => startNewZone({ lat: +x.lat, lng: +x.lon }, 16);
       li.append(b); ul.append(li);
     });
-  } catch (e) { ul.innerHTML = '<li class="mut">Recherche impossible (pas de réseau ?). Tu peux taper des coordonnées.</li>'; }
+  } catch (e) { wait.textContent = clubs.length ? 'Autres lieux : pas de réseau.' : 'Recherche impossible (pas de réseau ?). Tu peux taper des coordonnées.'; }
 }
 $('btnSearch').addEventListener('click', doSearch);
 $('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
