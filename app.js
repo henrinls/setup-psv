@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.13.0';
+const VERSION = '3.14.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -23,6 +23,7 @@ const GATE_COLOR = '#ff8c00', AXIS_COLOR = '#ffffff';
 const isDark = c => c === '#000000';
 
 // ---------- Stockage ----------
+let Wind = null; // panneau des vents (wind.js), créé plus bas
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('Enregistrement impossible sur cet appareil'); } }
@@ -240,26 +241,9 @@ function draw() {
 function legLine1(c) { const p = current.params; return `Base ${cfgName(c)} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
 function legLine2(c) { const p = current.params; return `cap ${hdg(c.geo.legHeading)}` + (+p.legHeight ? ` · début à ${p.legHeight} m` : ''); }
 
-function drawWindCircle(center, radius, color) {
+function drawWindCircle(center, radius, color) { // graduations et anneaux 1 m/s supprimés (19/11/2026, jugés inutiles)
   if (!(radius > 0)) return;
-  const p = current.params;
   L.circle(LL(center), { radius, color, weight: 1.6, fill: true, fillOpacity: .06, interactive: false }).addTo(fig);
-  if (p.rings) {
-    const v = +p.vref || 5;
-    for (let k = 1; k < v; k++)
-      L.circle(LL(center), { radius: radius * k / v, color, weight: 1, opacity: .55, fill: false, dashArray: '3 5', interactive: false }).addTo(fig);
-  }
-  if (p.ticks === false) return; // version épurée
-  const mpp = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
-  const degs = Geo.degTicks(radius / mpp);
-  const dc = declHere(), pt = (deg, d) => { const a = (deg + dc) * Math.PI / 180; return LL(Geo.fromLocal(center, { x: d * Math.sin(a), y: d * Math.cos(a) })); }; // degrés magnétiques
-  const segs = [];
-  degs.forEach(deg => { // un trait + le chiffre à l'extérieur du cercle (les degrés restent affichés même sans les autres textes)
-    segs.push([pt(deg, radius), pt(deg, radius - 10 * mpp)]);
-    L.marker(pt(deg, radius + 15 * mpp), { interactive: false,
-      icon: L.divIcon({ className: 'glabel', html: `<span style="color:${color}">${deg}°</span>`, iconSize: [0, 0] }) }).addTo(grads);
-  });
-  L.polyline(segs, { color, weight: 1.5, interactive: false }).addTo(grads);
 }
 
 const isDragging = m => !!(m && (m._lpDragging || (m.dragging && m.dragging._draggable && m.dragging._draggable._moving)));
@@ -516,7 +500,14 @@ numFields.forEach(k => {
   $('p_' + k).addEventListener('blur', () => fillInputs([k]));
 });
 // ---------- Bascules rapides sur la carte ----------
+// ---------- Vents de la prévision (panneau commun aux 3 applis, wind.js) : information seulement en PSV ----------
+Wind = WindPanel.make({
+  app: 'psv', decl: () => declHere(), onToggle: () => syncQuick(),
+  where: () => { const c = current.gateA || current.center; return c ? { id: current.id, lat: c.lat, lng: c.lng } : null; }
+});
+$('qWinds').addEventListener('click', () => Wind.isOpen() ? Wind.close() : Wind.open());
 function syncQuick() {
+  $('qWinds').classList.toggle('on', !!Wind && Wind.isOpen());
   const p = current.params, sh = current.show;
   const h = k => hasGates() ? cardOf(headingOf(k)) : (k === 'A' ? 'P1' : 'P2');
   const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
@@ -525,7 +516,6 @@ function syncQuick() {
   $('qShowA').classList.toggle('on', current.single ? sh !== 'none' : (sh === 'AB' || sh === 'A')); $('qShowB').classList.toggle('on', sh === 'AB' || sh === 'B');
   $('qShowA').textContent = '👁 ' + h('A'); $('qShowB').textContent = '👁 ' + h('B');
   $('qRec').classList.toggle('on', showRec());
-  $('qTicks').classList.toggle('on', p.ticks !== false); $('qRings').classList.toggle('on', !!p.rings);
 }
 function quick(fn, msg) { fn(); syncQuick(); persist(); redraw(); if (msg) toast(msg()); }
 $('qTurnA').addEventListener('click', () => quick(() => { current.turnA = current.turnA === 'G' ? 'D' : 'G'; }, () => `${cfgNameKey('A')} : virage à ${current.turnA === 'G' ? 'gauche' : 'droite'}`));
@@ -543,9 +533,7 @@ function toggleShow(k) {
 }
 $('qShowA').addEventListener('click', () => toggleShow('A'));
 $('qShowB').addEventListener('click', () => toggleShow('B'));
-$('qTicks').addEventListener('click', () => quick(() => { current.params.ticks = current.params.ticks === false; }, () => current.params.ticks ? 'Graduations affichées' : 'Graduations masquées'));
 $('qRec').addEventListener('click', () => quick(() => { current.params.rec = !showRec(); }, () => showRec() ? 'Point de snap affiché' : 'Point de snap masqué'));
-$('qRings').addEventListener('click', () => quick(() => { current.params.rings = !current.params.rings; }, () => current.params.rings ? 'Anneaux 1 m/s affichés' : 'Anneaux 1 m/s masqués'));
 // Couloir : la 1re porte reste fixe, on place la 2e au cap et à la distance voulus
 function setCorridor(headingDeg, lengthM) {
   if (!hasGates()) return toast('Place d\'abord les deux portes');
@@ -815,6 +803,7 @@ function loadZone(id) {
   map.setBearing(current.bearing || 0);
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
   closeSheet(); fillInputs(); redraw(); if (hasGates()) fitFigure(); persist();
+  if (Wind && Wind.isOpen()) { Wind.render(); Wind.ensure(false); }
 }
 // Nouvelle zone : on choisit d'abord où aller (ma position ou recherche), puis on place les portes
 async function startNewZone(center, zoom) {
@@ -1113,22 +1102,9 @@ async function renderPdfCanvas() {
   };
   const circle = (center, radius, color) => {
     if (!(radius > 0)) return;
-    const c = toC(center), R = radius * pxPerM(center), p = current.params;
+    const c = toC(center), R = radius * pxPerM(center);
     g.save(); g.strokeStyle = color; g.lineWidth = 2.6 * u; g.fillStyle = color; g.globalAlpha = .08;
     g.beginPath(); g.arc(c.x, c.y, R, 0, 2 * Math.PI); g.fill(); g.globalAlpha = 1; g.stroke();
-    if (p.rings) {
-      const v = +p.vref || 5; g.lineWidth = 1 * u; g.setLineDash([3 * u, 5 * u]); g.globalAlpha = .7;
-      for (let k = 1; k < v; k++) { g.beginPath(); g.arc(c.x, c.y, R * k / v, 0, 2 * Math.PI); g.stroke(); }
-      g.setLineDash([]); g.globalAlpha = 1;
-    }
-    if (p.ticks !== false) {
-      g.lineWidth = 1.6 * u;
-      Geo.degTicks(R / u, 40).forEach(deg => { // mêmes graduations que sur la carte (magnétiques), chiffres à l'extérieur
-        const a = pageAngle(deg + declHere()), l = 11 * u;
-        g.beginPath(); g.moveTo(c.x + R * Math.sin(a), c.y - R * Math.cos(a)); g.lineTo(c.x + (R - l) * Math.sin(a), c.y - (R - l) * Math.cos(a)); g.stroke();
-        shadowText(`${deg}°`, c.x + (R + 16 * u) * Math.sin(a), c.y - (R + 16 * u) * Math.cos(a), color, 12, 'center');
-      });
-    }
     g.restore();
   };
 
