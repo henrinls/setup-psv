@@ -1,7 +1,7 @@
 // Service worker : appli disponible hors-ligne + images satellite en cache.
-const APP_CACHE = 'psv-app-v3.9.4';
+const APP_CACHE = 'psv-app-v3.10.0';
 const TILE_CACHE = 'psv-tiles-v2';
-const APP_FILES = ['./', 'index.html', 'style.css', 'geo.js', 'app.js', 'manifest.webmanifest',
+const APP_FILES = ['./', 'index.html', 'style.css', 'geo.js', 'app.js', 'photo.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'vendor/leaflet.js', 'vendor/leaflet-rotate.js', 'vendor/leaflet.css', 'vendor/jspdf.umd.min.js',
   'vendor/images/marker-icon.png', 'vendor/images/marker-icon-2x.png', 'vendor/images/marker-shadow.png',
   'vendor/images/layers.png', 'vendor/images/layers-2x.png'];
@@ -16,7 +16,7 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (url.hostname === 'server.arcgisonline.com') {
+  if (url.hostname === 'server.arcgisonline.com' || url.hostname === 'data.geopf.fr') {
     // Images satellite : cache d'abord, sinon réseau (et mise en cache)
     e.respondWith(caches.open(TILE_CACHE).then(async c => {
       const hit = await c.match(e.request.url);

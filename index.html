@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.9.4">
+<link rel="stylesheet" href="style.css?v=3.10.0">
 </head>
 <body>
 <div id="map"></div>
@@ -83,6 +83,24 @@
         <button data-len="1">+1</button><button data-len="5">+5</button>
       </div>
     </div>
+
+    <h3>Fond de carte</h3>
+    <div class="row seg">
+      <button id="bmEsri">🛰 Satellite (monde)</button>
+      <button id="bmIgn">✈︎ Photos IGN (France)</button>
+    </div>
+    <p class="hint">Photos IGN : photos aériennes officielles, souvent plus nettes et plus récentes, mais seulement en France. Le hors-ligne et le PDF utilisent le fond choisi.</p>
+
+    <h3>Photo aérienne de la zone</h3>
+    <p class="hint warnline">⚠️ Uniquement une photo prise <b>à la verticale</b> (drone ou avion, appareil pointé droit vers le sol). Une photo oblique ne peut pas se caler sur la carte.</p>
+    <div class="row"><button id="btnPhoto" class="wide">📷 Importer une photo</button></div>
+    <input type="file" id="photoFile" accept="image/*" class="hidden">
+    <div id="photoCtl" class="hidden">
+      <div class="row grid2"><button id="photoShow" class="wide">👁 Photo affichée</button><button id="photoRecal" class="wide">🎯 Recaler</button></div>
+      <div class="row"><label>Transparence de la photo</label><input type="range" id="photoOpacity" min="10" max="100" step="5"></div>
+      <div class="row"><button id="photoDel" class="wide danger">🗑 Supprimer la photo</button></div>
+    </div>
+    <p class="hint">Calage en 4 appuis : un point sur la photo, le même sur la carte, puis un 2e point loin du premier. La photo reste sur ce téléphone (pas dans l'export).</p>
 
     <h3>Export</h3>
     <div class="row"><button id="btnPdf" class="wide primary">📄 PDF A4 paysage</button></div>
@@ -157,6 +175,12 @@
   </div>
 </div>
 
+<div id="calBox" class="hidden">
+  <p id="calText"></p>
+  <div id="calScroll"><div id="calWrap"><img id="calImg" alt=""></div></div>
+  <div class="calbtns"><button id="calZout">－</button><button id="calZin">＋</button><button id="calCancel">Annuler</button></div>
+</div>
+
 <div id="pdfReady" class="hidden">
   <div class="box">
     <p>PDF prêt : <b id="pdfName"></b></p>
@@ -166,9 +190,10 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.9.4"></script>
-<script src="vendor/leaflet-rotate.js?v=3.9.4"></script>
-<script src="geo.js?v=3.9.4"></script>
-<script src="app.js?v=3.9.4"></script>
+<script src="vendor/leaflet.js?v=3.10.0"></script>
+<script src="vendor/leaflet-rotate.js?v=3.10.0"></script>
+<script src="geo.js?v=3.10.0"></script>
+<script src="app.js?v=3.10.0"></script>
+<script src="photo.js?v=3.10.0"></script>
 </body>
 </html>
