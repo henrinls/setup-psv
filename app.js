@@ -4,7 +4,7 @@ window.addEventListener('error', e => {
   const t = document.getElementById('toast');
   if (t) { t.textContent = 'Erreur : ' + (e.message || 'inconnue') + ' — ferme et rouvre l\'appli'; t.classList.remove('hidden'); }
 });
-const VERSION = '3.12.0';
+const VERSION = '3.13.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -83,7 +83,12 @@ function persist() {
 }
 
 // Noms affichés : cap de l'axe de poser sur 3 chiffres + G/D (jamais A/B à l'écran)
-const hdg = h => String(Math.round(h) % 360).padStart(3, '0') + '°';
+// Déclinaison magnétique (WMM2025) au point de la zone : tous les caps affichés ou saisis sont magnétiques, la géométrie reste en vrai
+let _decl = { k: null, v: 0 };
+function declAt(c) { if (!c) return 0; const k = c.lat.toFixed(2) + ',' + c.lng.toFixed(2); if (_decl.k !== k) { let v = 0; try { v = magDeclination(c.lat, c.lng, new Date()); } catch (e) {} _decl = { k, v }; } return _decl.v; }
+function declHere() { return declAt(current && current.gateA ? current.gateA : current && current.center); }
+const magOf = h => ((Math.round(h - declHere()) % 360) + 360) % 360;
+const hdg = h => String(magOf(h)).padStart(3, '0') + '° M';
 function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h + 180) % 360; }
 // Nom d'un sens de poser : point cardinal le plus proche ; pile entre deux (45°, 135°…) → N ou S par convention
 function cardOf(h) { h = ((h % 360) + 360) % 360; if (h >= 315 || h <= 45) return 'N'; if (h >= 135 && h <= 225) return 'S'; return h < 180 ? 'E' : 'O'; }
@@ -233,7 +238,7 @@ function draw() {
 }
 
 function legLine1(c) { const p = current.params; return `Base ${cfgName(c)} · ${p.legLen} m` + (+p.legTime ? ` · ${p.legTime} s` : ''); }
-function legLine2(c) { const p = current.params; return `cap ${Math.round(c.geo.legHeading)}°` + (+p.legHeight ? ` · début à ${p.legHeight} m` : ''); }
+function legLine2(c) { const p = current.params; return `cap ${hdg(c.geo.legHeading)}` + (+p.legHeight ? ` · début à ${p.legHeight} m` : ''); }
 
 function drawWindCircle(center, radius, color) {
   if (!(radius > 0)) return;
@@ -247,7 +252,7 @@ function drawWindCircle(center, radius, color) {
   if (p.ticks === false) return; // version épurée
   const mpp = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
   const degs = Geo.degTicks(radius / mpp);
-  const pt = (deg, d) => { const a = deg * Math.PI / 180; return LL(Geo.fromLocal(center, { x: d * Math.sin(a), y: d * Math.cos(a) })); };
+  const dc = declHere(), pt = (deg, d) => { const a = (deg + dc) * Math.PI / 180; return LL(Geo.fromLocal(center, { x: d * Math.sin(a), y: d * Math.cos(a) })); }; // degrés magnétiques
   const segs = [];
   degs.forEach(deg => { // un trait + le chiffre à l'extérieur du cercle (les degrés restent affichés même sans les autres textes)
     segs.push([pt(deg, radius), pt(deg, radius - 10 * mpp)]);
@@ -470,9 +475,9 @@ function updateAxisInfo() {
     : current.single ? `Porte unique · axe de poser ${hdg(axisHeading())} (${cardOf(axisHeading())}). Pour changer le cap : appui long sur la flèche et tourne, ou saisis-le ci-dessous.`
     : `Axes de poser : ${hdg(axisHeading())} et ${hdg((axisHeading() + 180) % 360)} · couloir ${Math.round(corridorLength())} m`;
   $('lenRow').classList.toggle('hidden', !!current.single);
-  $('capLabel').textContent = current.single ? 'Cap du poser (°)' : 'Cap 1re → 2e porte (°)';
+  $('capLabel').textContent = current.single ? 'Cap du poser (° magnétiques)' : 'Cap 1re → 2e porte (° magnétiques)';
   if (hasGates()) {
-    if (document.activeElement !== $('c_heading')) $('c_heading').value = Math.round(axisHeading()) % 360;
+    if (document.activeElement !== $('c_heading')) $('c_heading').value = magOf(axisHeading());
     if (document.activeElement !== $('c_len')) $('c_len').value = Math.round(corridorLength());
   }
 }
@@ -555,7 +560,7 @@ document.querySelectorAll('[data-len]').forEach(b => b.addEventListener('click',
   if (hasGates()) setCorridor(axisHeading(), Math.round(corridorLength()) + +b.dataset.len);
 }));
 const numIn = el => parseFloat(String(el.value).replace(',', '.'));
-$('c_heading').addEventListener('change', e => { const v = numIn(e.target); if (!isNaN(v) && hasGates()) setCorridor(v, corridorLength()); });
+$('c_heading').addEventListener('change', e => { const v = numIn(e.target); if (!isNaN(v) && hasGates()) setCorridor(v + declHere(), corridorLength()); }); // saisie en magnétique
 $('c_len').addEventListener('change', e => { const v = numIn(e.target); if (!isNaN(v) && v > 0 && hasGates()) setCorridor(axisHeading(), v); });
 ['c_heading', 'c_len'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); }));
 
@@ -1118,8 +1123,8 @@ async function renderPdfCanvas() {
     }
     if (p.ticks !== false) {
       g.lineWidth = 1.6 * u;
-      Geo.degTicks(R / u, 40).forEach(deg => { // mêmes graduations que sur la carte, chiffres à l'extérieur
-        const a = pageAngle(deg), l = 11 * u;
+      Geo.degTicks(R / u, 40).forEach(deg => { // mêmes graduations que sur la carte (magnétiques), chiffres à l'extérieur
+        const a = pageAngle(deg + declHere()), l = 11 * u;
         g.beginPath(); g.moveTo(c.x + R * Math.sin(a), c.y - R * Math.cos(a)); g.lineTo(c.x + (R - l) * Math.sin(a), c.y - (R - l) * Math.cos(a)); g.stroke();
         shadowText(`${deg}°`, c.x + (R + 16 * u) * Math.sin(a), c.y - (R + 16 * u) * Math.cos(a), color, 12, 'center');
       });
