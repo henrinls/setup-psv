@@ -121,3 +121,6 @@ button.danger{border-color:#a33;color:#ff8a8a}
 #windsTable td,#windsTable th{white-space:nowrap;padding-left:3px;padding-right:3px} /* unités à côté des chiffres : pas de retour à la ligne */
 #windsTable th[colspan]{text-align:center}
 #windsTable th{white-space:normal;vertical-align:bottom;line-height:1.15}
+
+/* iPhone : pas de zoom ni de délai sur les appuis répétés (double-tap) */
+button,input,select,label,a{touch-action:manipulation}
