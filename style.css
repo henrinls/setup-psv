@@ -124,3 +124,6 @@ button.danger{border-color:#a33;color:#ff8a8a}
 
 /* iPhone : pas de zoom ni de délai sur les appuis répétés (double-tap) */
 button,input,select,label,a{touch-action:manipulation}
+
+/* Deux boutons côte à côte : même hauteur, même si l'un a son texte sur deux lignes (ex. Fermer / Partager-Enregistrer) */
+.grid2>button{align-self:stretch}
