@@ -144,7 +144,9 @@
       get when() { return when; }, fmtWhen,
       // Vent de surface (10 m) de la prévision à l'heure choisie : { dir (vrai, d'où il vient), spd (m/s) } ou null
       surface() { const pr = prof(); if (!pr) return null; const w = windAt(pr, 10); return isFinite(w.spd) ? w : null; },
-      info() { const r = rec(); return r ? { model: r.model, fetched: r.fetched } : null; }
+      info() { const r = rec(); return r ? { model: r.model, fetched: r.fetched } : null; },
+      // Altitude du terrain (m) donnée par la prévision Open-Meteo pour la zone, ou null
+      elev() { const r = rec(); return r && typeof r.elev === 'number' ? Math.round(r.elev) : null; }
     };
   }
   root.WindPanel = { make, fmtWhen, nowWhen };
