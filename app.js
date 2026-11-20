@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.20.0';
+const VERSION = '3.21.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -672,6 +672,7 @@ map.on('click', e => {
   if ((typeof Photo !== 'undefined') && Photo.onMapClick(e)) return; // calage d'une photo aérienne en cours
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
+  if (!current.id) { if (!namingZone) { namingZone = true; askZoneName().then(ok => { namingZone = false; if (ok) map.fire('click', e); }); } return; } // nom d'abord, puis le point
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
   if (placing === 'S') { // porte unique : on pose la porte puis on demande le cap
     current.single = true; current.show = 'AB'; current.gateA = p; current.gateB = null;
@@ -759,6 +760,8 @@ function pdfFade(g, W, H) { // même voile que l'écran sur le fond du PDF
   g.save(); g.globalAlpha = 1 - op; g.fillStyle = fade.bg === 'white' ? '#fff' : '#000'; g.fillRect(0, 0, W, H); g.restore();
 }
 applyFade();
+
+setTimeout(() => { if (!current.id && (current.gateA)) askZoneName('Ta zone en cours n\'est pas enregistrée. Donne-lui un nom pour la garder (elle s\'enregistre ensuite toute seule) :'); }, 1500);
 
 // Rotation portrait ↔ paysage : recadrage automatique (20 nov. 2026 : en paysage, Henri gardait le cadrage du portrait)
 let lastLand = innerWidth > innerHeight;
@@ -891,6 +894,17 @@ function loadZone(id) {
   map.setView([current.center.lat, current.center.lng], Math.max(current.zoom || 17, 15));
   closeSheet(); fillInputs(); redraw(); if (hasGates()) fitFigure(); persist();
   if (Wind && Wind.isOpen()) { Wind.render(); Wind.ensure(false); }
+}
+// Zone jamais nommée (appli ouverte puis point posé directement) : on demande son nom AVANT le premier point,
+// et elle s'enregistre ensuite toute seule (20 nov. 2026 — Laura avait préparé un saut dans une « Nouvelle zone (non enregistrée) »)
+let namingZone = false;
+async function askZoneName(msg) {
+  if (current.id) return true;
+  const n = await ask(msg || 'Nom de la zone (ex. Bouloc) ? Elle s\'enregistre ensuite toute seule.', current.name && current.name !== 'Nouvelle zone' ? current.name : '');
+  if (!n || !String(n).trim()) return false;
+  current.name = String(n).trim(); current.id = 'z' + Date.now(); current.updated = Date.now();
+  zones.push(clone(current)); store.set('psv.zones', zones); persist(); fillInputs(); renderZones();
+  toast(`Zone « ${current.name} » enregistrée`); return true;
 }
 // Nouvelle zone : on choisit d'abord où aller (ma position ou recherche), puis on place les portes
 async function startNewZone(center, zoom) {
