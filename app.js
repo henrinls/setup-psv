@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.17.0';
+const VERSION = '3.18.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -1232,53 +1232,60 @@ $('pdfShare').addEventListener('click', async () => {
   } catch (e) { if (e && e.name !== 'AbortError') toast('Partage impossible'); }
 });
 
-// ---------- Sauvegarde ----------
-// Exporter : fichier .json (zones + manœuvre) proposé à la feuille de partage (Fichiers, AirDrop, mail…).
-$('btnExport').addEventListener('click', async () => {
-  persist();
-  const data = JSON.stringify({ app: 'setup-psv', v: 3, exported: new Date().toISOString(), profile, zones }, null, 1);
-  const name = `${dateStamp()}_Setup_PSV_zones.json`;
-  const file = new File([data], name, { type: 'application/json' });
+// ---------- Sauvegarde (20 nov. 2026) : zones et manœuvre dans deux fichiers séparés ----------
+// Donner ses zones à quelqu'un ne touche jamais à sa manœuvre : onglet Zones = fichier des zones, onglet Manœuvre = fichier de la manœuvre.
+// Nom du fichier : AAAAMMJJ_Setup_PSV_<Zones|Manoeuvre>_<Prénom>.json — le prénom est demandé à l'export (le dernier est proposé).
+async function shareJson(obj, name) {
+  const file = new File([JSON.stringify(obj, null, 1)], name, { type: 'application/json' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] }); /* sans title : iOS en ferait un .txt en plus */
     else { const url = URL.createObjectURL(file); const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); }
   } catch (e) { if (e && e.name !== 'AbortError') toast('Export impossible'); }
+}
+async function exportKind(kind) {
+  persist();
+  const n = await ask('Ton prénom (il sera dans le nom du fichier, pour savoir de qui il vient) :', store.get('psv.author', ''));
+  if (n === null) return;
+  const who = String(n).trim(); store.set('psv.author', who);
+  const obj = { app: 'setup-psv', kind, v: 4, exported: new Date().toISOString(), author: who };
+  if (kind === 'zones') obj.zones = zones; else obj.profile = profile;
+  await shareJson(obj, `${dateStamp()}_Setup_PSV_${kind === 'zones' ? 'Zones' : 'Manoeuvre'}${who ? '_' + safeName(who) : ''}.json`);
+}
+async function readJsonFile(input) {
+  const f = input.files && input.files[0]; if (!f) return null;
+  try { return JSON.parse(await f.text()); } catch (er) { toast('Fichier illisible'); return null; }
+}
+const fromWho = d => d && d.author ? ` de ${d.author}` : '';
+$('btnExportZones').addEventListener('click', () => exportKind('zones'));
+$('btnExportProf').addEventListener('click', () => exportKind('profile'));
+$('btnImportZones').addEventListener('click', () => { $('importZonesFile').value = ''; $('importZonesFile').click(); });
+$('btnImportProf').addEventListener('click', () => { $('importProfFile').value = ''; $('importProfFile').click(); });
+// Importer des zones : toujours une fusion, jamais d'écrasement. Une zone déjà présente (même zone) reste telle quelle.
+// Les zones importées prennent TA manœuvre. Pour repartir d'un fichier, effacer d'abord les zones puis importer.
+$('importZonesFile').addEventListener('change', async e => {
+  const d = await readJsonFile(e.target); if (!d) return;
+  if (!Array.isArray(d.zones)) { toast(d.profile ? 'Ce fichier contient une manœuvre : importe-le depuis l\'onglet Manœuvre' : 'Fichier illisible'); return; }
+  let added = 0, kept = 0;
+  d.zones.map(upgrade).forEach(z => {
+    if (!z.id) z.id = 'z' + Date.now() + Math.random().toString(36).slice(2, 6);
+    if (zones.some(x => x.id === z.id)) { kept++; return; }
+    applyProfile(z); zones.push(z); added++;
+  });
+  store.set('psv.zones', zones); renderZones(); redraw();
+  toast(`Zones${fromWho(d)} : ${added} ajoutée(s)${kept ? `, ${kept} déjà présente(s) gardée(s) telles quelles` : ''}`);
 });
-// Importer : ajoute les zones du fichier à celles déjà là (fusion, rien n'est effacé).
-// Même zone des deux côtés → on garde la version la plus récente. Si l'appli est vide, on reprend aussi la manœuvre du fichier.
-$('btnImport').addEventListener('click', () => { $('importFile').value = ''; $('importFile').click(); });
-$('importFile').addEventListener('change', async e => {
-  const f = e.target.files && e.target.files[0]; if (!f) return;
-  try {
-    const d = JSON.parse(await f.text());
-    if (!Array.isArray(d.zones)) throw new Error('format');
-    const wasEmpty = zones.length === 0;
-    // Le fichier contient zones + manœuvre : la manœuvre est reprise aussi (20 nov. 2026) ; question seulement si elle diffère de la tienne et que tu as déjà des zones
-    let tookProfile = false;
-    if (d.profile && typeof d.profile === 'object') {
-      const diff = PROFILE_KEYS.some(k => d.profile[k] !== undefined && JSON.stringify(d.profile[k]) !== JSON.stringify(profile[k]));
-      if (diff && (wasEmpty || await ask('Le fichier contient aussi une manœuvre différente de la tienne. La reprendre ? (elle remplace tes réglages actuels ; Annuler = garder les tiens, les zones sont importées quand même)'))) {
-        PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); profile.legLen = legLenOf(profile); store.set('psv.profile', profile); tookProfile = true;
-      }
-    }
-    let added = 0, updated = 0;
-    d.zones.map(upgrade).forEach(z => {
-      if (!z.id) z.id = 'z' + Date.now() + Math.random().toString(36).slice(2, 6);
-      applyProfile(z);
-      const i = zones.findIndex(x => x.id === z.id);
-      if (i < 0) { zones.push(z); added++; }
-      else if ((z.updated || 0) > (zones[i].updated || 0)) { zones[i] = z; updated++; }
-    });
-    store.set('psv.zones', zones);
-    if (tookProfile) { zones.forEach(applyProfile); store.set('psv.zones', zones); applyProfile(current); persist(); fillInputs(); }
-    renderZones(); redraw();
-    toast(`Import : ${added} zone(s) ajoutée(s)${updated ? `, ${updated} mise(s) à jour` : ''}${tookProfile ? ' · manœuvre reprise' : ''}`);
-  } catch (er) { toast('Fichier illisible'); }
+// Importer une manœuvre : remplace ta manœuvre (on n'en a qu'une) ; les zones ne bougent pas.
+$('importProfFile').addEventListener('change', async e => {
+  const d = await readJsonFile(e.target); if (!d) return;
+  if (!d.profile || typeof d.profile !== 'object') { toast(Array.isArray(d.zones) ? 'Ce fichier contient des zones : importe-le depuis l\'onglet Zones' : 'Fichier illisible'); return; }
+  PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); profile.legLen = legLenOf(profile); store.set('psv.profile', profile);
+  zones.forEach(applyProfile); store.set('psv.zones', zones); applyProfile(current); persist(); fillInputs(); redraw();
+  toast(`Manœuvre${fromWho(d)} importée`);
 });
-// Tout effacer (zones, manœuvre, zone en cours) — les photos gardées hors-ligne restent.
+// Effacer : les zones seulement (et la zone en cours) — la manœuvre est gardée (pas de bouton pour l'effacer : la modifier à la main).
 $('btnWipe').addEventListener('click', async () => {
-  if (!(await ask('Effacer TOUTES les données (zones enregistrées, manœuvre, zone en cours) ? C\'est définitif. Pense à exporter avant si besoin.'))) return;
-  ['psv.zones', 'psv.current', 'psv.profile', 'psv.lastParams'].forEach(k => { try { localStorage.removeItem(k); } catch (er) {} });
+  if (!(await ask('Effacer TOUTES les zones enregistrées (et la zone en cours) ? C\'est définitif. Ta manœuvre est gardée. Pense à exporter les zones avant si besoin.'))) return;
+  ['psv.zones', 'psv.current'].forEach(k => { try { localStorage.removeItem(k); } catch (er) {} });
   if ((typeof Photo !== 'undefined')) await Photo.clearAll();
   location.reload();
 });
