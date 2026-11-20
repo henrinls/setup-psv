@@ -26,8 +26,9 @@
   function url(lat, lng, date, src, minimal) {
     const v = [];
     (minimal ? [10] : src.hlev).forEach(h => v.push(`wind_speed_${h}m`, `wind_direction_${h}m`));
-    v.push('temperature_2m'); if (!minimal && src.kind === 'mf') [20, 50, 100, 150, 200].forEach(h => v.push(`temperature_${h}m`));
-    PLEV.forEach(p => v.push(`wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `temperature_${p}hPa`, `geopotential_height_${p}hPa`));
+    v.push('temperature_2m'); if (!minimal) v.push('relative_humidity_2m'); // humidité : pas dans la requête allégée (secours si refusée)
+    if (!minimal && src.kind === 'mf') [20, 50, 100, 150, 200].forEach(h => v.push(`temperature_${h}m`));
+    PLEV.forEach(p => v.push(`wind_speed_${p}hPa`, `wind_direction_${p}hPa`, `temperature_${p}hPa`, `geopotential_height_${p}hPa`, ...(minimal ? [] : [`relative_humidity_${p}hPa`])));
     return `${src.base}?latitude=${lat.toFixed(4)}&longitude=${lng.toFixed(4)}&hourly=${v.join(',')}&models=${src.models}` +
       `&wind_speed_unit=ms&timezone=auto&start_date=${date}&end_date=${date}`;
   }
@@ -39,14 +40,14 @@
     const elev = typeof rec.elev === 'number' ? rec.elev : 0;
     const val = k => (H[k] && typeof H[k][i] === 'number') ? H[k][i] : null;
     const lv = [];
-    const add = (h, spd, dir, T) => { if (spd == null || dir == null) return; const a = dir * Math.PI / 180; lv.push({ h, spd, dir, T, u: -spd * Math.sin(a), v: -spd * Math.cos(a) }); };
+    const add = (h, spd, dir, T, RH) => { if (spd == null || dir == null) return; const a = dir * Math.PI / 180; lv.push({ h, spd, dir, T, RH: RH == null ? null : RH, u: -spd * Math.sin(a), v: -spd * Math.cos(a) }); };
     Object.keys(H).filter(k => /^wind_speed_\d+m$/.test(k)).map(k => +k.match(/\d+/)[0]).sort((a, b) => a - b)
-      .forEach(h => add(h, val(`wind_speed_${h}m`), val(`wind_direction_${h}m`), val(h === 10 ? 'temperature_2m' : `temperature_${h}m`)));
+      .forEach(h => add(h, val(`wind_speed_${h}m`), val(`wind_direction_${h}m`), val(h === 10 ? 'temperature_2m' : `temperature_${h}m`), h === 10 ? val('relative_humidity_2m') : null));
     const topH = lv.length ? lv[lv.length - 1].h : 0, pz = [];
     PLEV.forEach(p => {
       const z = val(`geopotential_height_${p}hPa`); if (z == null) return;
       pz.push({ p, z });
-      if (z - elev > topH + 30) add(z - elev, val(`wind_speed_${p}hPa`), val(`wind_direction_${p}hPa`), val(`temperature_${p}hPa`));
+      if (z - elev > topH + 30) add(z - elev, val(`wind_speed_${p}hPa`), val(`wind_direction_${p}hPa`), val(`temperature_${p}hPa`), val(`relative_humidity_${p}hPa`));
     });
     lv.sort((a, b) => a.h - b.h); pz.sort((a, b) => b.p - a.p);
     return lv.length ? { lv, pz, elev } : null;
@@ -65,7 +66,7 @@
   const flToAgl = (fl, pr) => { const hs = fl * 30.48, z = zOfP(pr.pz, stdP(hs)); return (z == null ? hs : z) - pr.elev; };
   const aglToFl = (agl, pr) => { const p = pOfZ(pr.pz, agl + pr.elev); return (p == null ? agl + pr.elev : stdH(p)) / 30.48; };
   function rows(pr) { // une ligne par tranche de 1 000 ft, de la surface à ~10 000 m sol
-    const out = [], add = (lab, h) => { const w = windAt(pr, h); out.push({ lab, h, dir: w.dir, spd: w.spd, T: interp(pr, h, 'T') }); };
+    const out = [], add = (lab, h) => { const w = windAt(pr, h); out.push({ lab, h, dir: w.dir, spd: w.spd, T: interp(pr, h, 'T'), RH: (() => { const q = pr.lv.filter(l => l.RH != null); return q.length ? interp({ lv: q }, h, 'RH') : null; })() }); /* humidité : seulement entre les niveaux qui en ont */ };
     add('Sol (10 m)', 10);
     const fl0 = Math.ceil(aglToFl(30, pr) / 10) * 10;
     for (let fl = Math.max(10, fl0); fl <= 400; fl += 10) { const h = flToAgl(fl, pr); if (h > 10000) break; if (h > 20) add('FL' + String(fl).padStart(3, '0'), h); }
@@ -120,7 +121,7 @@
       if (!pr) { tb.innerHTML = '<tr><td colspan="6" class="mut">Pas de donnée pour cette heure.</td></tr>'; return; }
       rows(pr).forEach(x => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${x.lab}</td><td>${fmtInt(x.h)} m</td><td>${hdgN(x.dir)}</td><td>${Math.round(x.spd * KT)} kt</td><td>${fmt1(x.spd)} m/s</td><td>${x.T == null ? '–' : Math.round(x.T) + ' °C'}</td>`; // unité à côté de chaque chiffre
+        tr.innerHTML = `<td>${x.lab}</td><td>${fmtInt(x.h)} m</td><td>${hdgN(x.dir)}</td><td>${Math.round(x.spd * KT)} kt</td><td>${fmt1(x.spd)} m/s</td><td>${x.T == null ? '–' : Math.round(x.T) + ' °C'}</td><td>${x.RH == null ? '–' : Math.round(x.RH) + ' %'}</td>`; // unité à côté de chaque chiffre
         tb.append(tr);
       });
     }
