@@ -78,6 +78,8 @@
     const $ = id => document.getElementById(id);
     const mem = {}, failed = {};
     let when = nowWhen(), busy = false, userSet = false; // userSet : heure choisie à la main (sinon on suit l'heure actuelle)
+    let pick = null, busyPick = false; // point choisi sur la carte pour le tableau (windpick.js, 21 nov. 2026) ; la zone reste la référence des calculs
+    const showZ = () => pick ? { id: '__pick', lat: pick.lat, lng: pick.lng } : opts.where();
     const key = (zid, date) => `${opts.app}.wx.${zid || 'tmp'}.${date}`;
     const cached = (zid, date) => { const k = key(zid, date); return mem[k] || (mem[k] = lsGet(k)); };
     const hdgN = d => String(Math.round(n360(d - (opts.decl ? opts.decl() : 0))) % 360).padStart(3, '0') + '°';
@@ -105,6 +107,16 @@
       finally { busy = false; render(); if (opts.onChange) opts.onChange(); }
     }
     const rec = () => { const z = opts.where(); return z ? cached(z.id, when.slice(0, 10)) : null; };
+    const recShow = () => { const z = showZ(); return z ? cached(z.id, when.slice(0, 10)) : null; };
+    async function ensurePick(force) { /* prévision du point choisi (même règle que la zone : 1 h, ou point déplacé) */
+      if (!pick) return null; const z = showZ(), date = when.slice(0, 10), have = cached(z.id, date);
+      const moved = have && (Math.abs(have.lat - z.lat) > 0.0005 || Math.abs(have.lng - z.lng) > 0.0005);
+      if (have && !force && !moved && Date.now() - have.fetched < 3600e3) return have;
+      if (busyPick) return have; busyPick = true; if ($('t_info')) $('t_info').textContent = 'Téléchargement de la prévision du point…';
+      try { const r = await fetchDay(z, date); delete failed['pick' + date]; return r; } catch (e) { failed['pick' + date] = true; return have; }
+      finally { busyPick = false; render(); }
+    }
+    const ensurePanel = force => { const a = ensure(force); if (pick) ensurePick(force); return a; };
     const prof = () => profile(rec(), when);
     function status(r) {
       if (!r) return navigator.onLine === false || failed[when.slice(0, 10)] ? '⚠️ Pas de réseau et aucune prévision gardée pour ce jour.' : 'Prévision en cours de téléchargement…';
@@ -114,9 +126,9 @@
     }
     function render() {
       const box = $('windsBox'); if (!box) return;
-      const r = rec(), pr = profile(r, when);
+      const r = recShow(), pr = profile(r, when);
       $('t_date').value = when.slice(0, 10); $('t_hour').value = when.slice(11, 13);
-      $('t_info').innerHTML = status(r) + (r && typeof r.elev === 'number' ? ` · terrain ${Math.round(r.elev)} m` : '');
+      $('t_info').innerHTML = (pick && !r && failed['pick' + when.slice(0, 10)] ? '⚠️ Prévision impossible à télécharger pour ce point (réseau ?).' : status(r)) + (pick ? ` · <b>au point choisi</b> (${pick.lat.toFixed(4)}, ${pick.lng.toFixed(4)})` : '') + (r && typeof r.elev === 'number' ? ` · terrain ${Math.round(r.elev)} m` : '');
       const tb = $('windsTable').querySelector('tbody'); tb.innerHTML = '';
       if (!pr) { tb.innerHTML = '<tr><td colspan="6" class="mut">Pas de donnée pour cette heure.</td></tr>'; return; }
       rows(pr).forEach(x => {
@@ -125,14 +137,15 @@
         tb.append(tr);
       });
     }
-    function setWhen(w) { when = w; userSet = true; render(); if (opts.onChange) opts.onChange(); ensure(false); }
+    function setWhen(w) { when = w; userSet = true; render(); if (opts.onChange) opts.onChange(); ensurePanel(false); }
     const isOpen = () => !$('windsBox').classList.contains('hidden');
-    function open() { $('windsBox').classList.remove('hidden'); render(); ensure(false); if (opts.onToggle) opts.onToggle(true); }
+    function open() { $('windsBox').classList.remove('hidden'); render(); ensurePanel(false); if (opts.onToggle) opts.onToggle(true); }
+    function setPoint(p) { pick = p; render(); if (pick && isOpen()) ensurePick(false); }
     function close() { $('windsBox').classList.add('hidden'); if (opts.onToggle) opts.onToggle(false); }
     $('t_close').addEventListener('click', close);
     $('t_minus').addEventListener('click', () => setWhen(shiftWhen(when, -1)));
     $('t_plus').addEventListener('click', () => setWhen(shiftWhen(when, 1)));
-    $('t_now').addEventListener('click', () => { when = nowWhen(); userSet = false; render(); if (opts.onChange) opts.onChange(); ensure(true); });
+    $('t_now').addEventListener('click', () => { when = nowWhen(); userSet = false; render(); if (opts.onChange) opts.onChange(); ensurePanel(true); });
     $('t_date').addEventListener('change', e => { if (e.target.value) setWhen(e.target.value + when.slice(10)); });
     $('t_hour').addEventListener('change', e => setWhen(when.slice(0, 11) + e.target.value + ':00'));
     document.addEventListener('visibilitychange', () => {
@@ -141,7 +154,7 @@
       ensure(false);
     });
     return {
-      open, close, isOpen, render, ensure,
+      open, close, isOpen, render, ensure, setPoint,
       get when() { return when; }, fmtWhen,
       // Vent de surface (10 m) de la prévision à l'heure choisie : { dir (vrai, d'où il vient), spd (m/s) } ou null
       surface() { const pr = prof(); if (!pr) return null; const w = windAt(pr, 10); return isFinite(w.spd) ? w : null; },

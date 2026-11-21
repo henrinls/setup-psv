@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.21.8';
+const VERSION = '3.22.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -599,7 +599,9 @@ function syncElev() {
 $('z_elev').addEventListener('change', e => { const raw = e.target.value.trim(), v = parseFloat(raw.replace(',', '.')); current.elevManual = raw === '' || isNaN(v) ? null : Math.round(v); persist(); syncElev(); });
 Wind.ensure(false); // pour l'altitude du terrain (et le panneau des vents)
 
-$('qWinds').addEventListener('click', () => Wind.isOpen() ? Wind.close() : Wind.open());
+$('qWinds').addEventListener('click', () => { if (Wind.isOpen()) { Wind.close(); WindPick.sync(); } else { WindPick.reset(); Wind.open(); } });
+/* Tableau des vents : point choisi sur la carte (windpick.js, 21 nov. 2026) ; par défaut, la zone */
+WindPick.init({ map, isOpen: () => Wind.isOpen(), open: () => Wind.open(), close: () => Wind.close(), onPick: p => Wind.setPoint(p), restoreBanner: () => placeBanner() });
 function syncQuick() {
   $('qWinds').classList.toggle('on', !!Wind && Wind.isOpen());
   const p = current.params, sh = current.show;
@@ -731,6 +733,7 @@ function measureClick(p) {
 map.on('click', e => {
   if (Date.now() < suppressClickUntil) return; // fin d'un déplacement de point : pas un appui
   if ((typeof Photo !== 'undefined') && Photo.onMapClick(e)) return; // calage d'une photo aérienne en cours
+  if ((typeof WindPick !== 'undefined') && WindPick.onMapClick(e)) return; // point choisi pour le tableau des vents
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   if (!current.id) { if (!namingZone) { namingZone = true; askZoneName().then(ok => { namingZone = false; if (ok) map.fire('click', e); }); } return; } // nom d'abord, puis le point
