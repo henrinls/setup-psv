@@ -88,7 +88,7 @@
         try { r = await fetch(url(z.lat, z.lng, date, s2, minimal)); if (r.ok) { js = await r.json(); used = s2; break; } } catch (e) { r = null; if (navigator.onLine === false) break; }
       }
       if (!js || !js.hourly) throw new Error('réseau');
-      const rec = { date, fetched: Date.now(), model: used.name, elev: js.elevation, hourly: js.hourly, lat: z.lat, lng: z.lng };
+      const rec = { date, fetched: Date.now(), model: used.name, elev: js.elevation, hourly: js.hourly, lat: z.lat, lng: z.lng, rh: Object.keys(js.hourly).some(k => /^relative_humidity/.test(k)) };
       const k = key(z.id, date); mem[k] = rec; lsSet(k, rec);
       try { Object.keys(localStorage).filter(x => x.startsWith(`${opts.app}.wx.${z.id || 'tmp'}.`)).sort().slice(0, -4).forEach(x => { lsDel(x); delete mem[x]; }); } catch (e) {}
       return rec;
@@ -98,7 +98,7 @@
       const z = opts.where(); if (!z) return null;
       const date = when.slice(0, 10), have = cached(z.id, date);
       const moved = have && typeof have.lat === 'number' && (Math.abs(have.lat - z.lat) > 0.02 || Math.abs(have.lng - z.lng) > 0.02);
-      if (have && !force && !moved && Date.now() - have.fetched < 3600e3) return have;
+      if (have && !force && !moved && Date.now() - have.fetched < 3600e3 && have.rh !== undefined) return have; // prévision d'avant l'humidité (rh absent) : on la retélécharge
       if (busy) return have; busy = true; if ($('t_info')) $('t_info').textContent = 'Téléchargement de la prévision…';
       try { const r = await fetchDay(z, date); delete failed[date]; return r; }
       catch (e) { failed[date] = true; return have; }
