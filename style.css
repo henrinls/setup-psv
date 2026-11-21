@@ -135,3 +135,4 @@ button,input,select,label,a{touch-action:manipulation}
 .seg.segbm{grid-template-columns:1fr 1fr 1fr}.seg.segbm button{font-size:14px}
 
 #sheet h3{position:sticky;top:var(--h3top,60px);z-index:1;background:#161616;padding:6px 0 5px;margin-bottom:2px}
+#banner.hasx{padding-right:34px}#banner .bcancel{position:absolute;top:4px;right:5px;margin:0;width:24px;height:24px;padding:0;border:none;background:transparent;color:#111;font-size:17px;font-weight:700;line-height:24px;border-radius:50%}
