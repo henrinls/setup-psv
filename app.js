@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.32.1';
+const VERSION = '3.33.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -1523,7 +1523,7 @@ async function startCalib() {
   const sw = Wind && Wind.surface ? Wind.surface() : null, gateOf = pts => ref === 'P' ? pts[pts.length - 1] : c.gate;
   Calib.start({ map, steps, anchor: pts => gateOf(pts || []), anchorName: ref === 'P' ? 'la porte posée' : 'la porte d\'entrée', decl: () => declHere(), title: 'Vent pendant ce saut',
     wind: { dir: sw ? sw.dir : c.heading, spd: sw ? sw.spd : 0 },
-    extra: [{ id: 't1', label: 'Abattée + rotation', unit: 's', value: +current.params.t1 || 0 }, { id: 't2', label: 'Recouvrement', unit: 's', value: +current.params.t2 || 0 }],
+    extra: [{ id: 't1', label: 'Abattée + rotation', unit: 's', value: +current.params.t1 || 0 }, { id: 't2', label: 'Recouvrement', unit: 's', value: +current.params.t2 || 0 }, { id: 'note', label: 'Commentaire', text: true, placeholder: 'facultatif' }],
     onOk: r => recordCalib(c, what, r, gateOf(r.pts)) });
 }
 /* v3.32.0 (Henri) : historique des sauts d'étalonnage. Valider un étalonnage ENREGISTRE le saut (il ne change plus la manœuvre) ;
@@ -1537,7 +1537,7 @@ function recordCalib(c, what, r, gate) {
   gate = gate || c.gate;
   const { f, r: rr } = Geo.basis(c.heading), ax = ll => { const q = Geo.toLocal(gate, ll); return { a: q.x * f.x + q.y * f.y, l: q.x * rr.x + q.y * rr.y }; };
   let i = 0; const e = { id: 'c' + Date.now().toString(36), t: Date.now(), zone: current.name || '', cfg: cfgName(c), turn: c.turn, wrel: ((r.dir - c.heading) % 360 + 360) % 360, spd: r.spd,
-    t1: r.extra && isFinite(r.extra.t1) ? r.extra.t1 : +current.params.t1 || 0, t2: r.extra && isFinite(r.extra.t2) ? r.extra.t2 : +current.params.t2 || 0, on: true };
+    t1: r.extra && isFinite(r.extra.t1) ? r.extra.t1 : +current.params.t1 || 0, t2: r.extra && isFinite(r.extra.t2) ? r.extra.t2 : +current.params.t2 || 0, on: true, note: r.extra && r.extra.note ? r.extra.note : '' }; /* note : commentaire libre (v3.33.0) */
   if (what.includes('S')) e.S = ax(r.pts[i++]);
   if (what.includes('R')) e.R = ax(r.pts[i++]);
   calHist.unshift(e); saveHist(); renderHist(); redraw();
@@ -1563,10 +1563,11 @@ function renderHist() {
   const ul = $('calHist'); if (!ul) return;
   if (!calHist.length) { ul.innerHTML = '<li class="mut">Aucun saut d\'étalonnage pour l\'instant.</li>'; $('calAvg').textContent = ''; $('calApplyAvg').disabled = true; return; }
   ul.innerHTML = calHist.map(e => { const z = calZero(e), d = new Date(e.t), dd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
-    return `<li class="calRow"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}> <span>${dd} · ${esc(e.zone)} · ${esc(e.cfg)} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b></span></label>
-      <span class="calBtns"><button data-apply="${e.id}" title="Appliquer ce saut seul à la manœuvre">Appliquer</button><button data-del="${e.id}" title="Supprimer">🗑</button></span></li>`; }).join('');
+    return `<li class="calRow"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}> <span>${dd} · ${esc(e.zone)} · ${esc(e.cfg)} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b>${e.note ? `<br><i class="calNote">${esc(e.note)}</i>` : ''}</span></label>
+      <span class="calBtns"><button data-apply="${e.id}" title="Appliquer ce saut seul à la manœuvre">Appliquer</button><button data-note="${e.id}" title="Commentaire">✏️</button><button data-del="${e.id}" title="Supprimer">🗑</button></span></li>`; }).join('');
   ul.querySelectorAll('[data-on]').forEach(b => b.addEventListener('change', () => { const e = calHist.find(x => x.id === b.dataset.on); if (e) { e.on = b.checked; saveHist(); renderAvg(); redraw(); } }));
   ul.querySelectorAll('[data-apply]').forEach(b => b.addEventListener('click', () => { const e = calHist.find(x => x.id === b.dataset.apply); if (e) applyCalibValues(calZero(e), { t1: e.t1, t2: e.t2 }, 'ce saut'); }));
+  ul.querySelectorAll('[data-note]').forEach(b => b.addEventListener('click', async () => { const e = calHist.find(x => x.id === b.dataset.note); if (!e) return; const t = await ask('Commentaire de ce saut :', e.note || ''); if (t === null) return; e.note = String(t).trim(); saveHist(); renderHist(); })); /* v3.33.0 (Henri) : commentaire libre */
   ul.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { if (!(await ask('Supprimer ce saut de l\'historique ?'))) return; calHist = calHist.filter(x => x.id !== b.dataset.del); saveHist(); renderHist(); redraw(); }));
   renderAvg();
 }

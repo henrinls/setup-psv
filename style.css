@@ -155,3 +155,4 @@ button,input,select,label,a{touch-action:manipulation}
 #top .round{flex-shrink:0}
 /* v3.32.0 : historique d'étalonnage */
 .calHist{list-style:none;margin:0;padding:0}.calHist li{border-bottom:1px solid #333;padding:6px 0;font-size:13px}.calRow{display:flex;gap:6px;align-items:center}.calRow label{flex:1;display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.35}.calRow input[type=checkbox]{width:20px;height:20px;min-width:20px;flex:0 0 20px;margin:2px 0 0;padding:0}.calRow label span{flex:1}.calBtns{display:flex;gap:4px}.calBtns button{padding:4px 8px;font-size:12px;height:auto}
+.calNote{color:#ffd400;font-style:italic}

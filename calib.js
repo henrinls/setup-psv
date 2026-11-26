@@ -122,7 +122,7 @@
       <div class="row ax"><label>Axe (d'où il vient)</label><input id="c_dir" inputmode="numeric"> <span>° M</span></div>
       <div class="row st ax"><label></label><button data-d="-5">−5</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="5">+5</button></div>
       ${o.height ? `<div class="row"><label>${o.hLabel || 'Hauteur'}</label><input id="c_h" inputmode="decimal"> <span>m</span></div>` : ''}
-      ${(o.extra || []).map(f => `<div class="row"><label>${f.label}</label><input id="c_x_${f.id}" inputmode="decimal" value="${String(f.value).replace('.', ',')}"> <span>${f.unit || ''}</span></div>`).join('')}
+      ${(o.extra || []).map(f => f.text ? `<div class="row"><label>${f.label}</label><input id="c_x_${f.id}" type="text" style="flex:1;width:auto;text-align:left;font-size:15px" placeholder="${f.placeholder || ''}"></div>` : `<div class="row"><label>${f.label}</label><input id="c_x_${f.id}" inputmode="decimal" value="${String(f.value).replace('.', ',')}"> <span>${f.unit || ''}</span></div>`).join('')}
       <p class="hint">L'axe orange passe par ${o.anchorName || 'le point de référence'} : fais glisser le rond orange pour le tourner.</p>
       <div class="btns"><button id="c_no">Annuler</button><button id="c_ok" class="primary">Valider</button></div>`;
     p.querySelector('h4').textContent = o.title || 'Vent au moment du saut';
@@ -144,7 +144,7 @@
       const h = o.height ? num($('c_h')) : null;
       if (o.height && (isNaN(h) || h < 0)) { $('c_h').focus(); return; }
       const extra = {}; /* champs en plus (v3.32.0 PSV : temps du saut) */
-      for (const f of (o.extra || [])) { const v = num($('c_x_' + f.id)); if (isNaN(v) || v < 0) { $('c_x_' + f.id).focus(); return; } extra[f.id] = v; }
+      for (const f of (o.extra || [])) { if (f.text) { extra[f.id] = $('c_x_' + f.id).value.trim(); continue; } const v = num($('c_x_' + f.id)); if (isNaN(v) || v < 0) { $('c_x_' + f.id).focus(); return; } extra[f.id] = v; }
       const r = { pts: pts.slice(), dir: w.dir, spd: w.spd, h, extra };
       end(); if (o.onOk) o.onOk(r);
     };
