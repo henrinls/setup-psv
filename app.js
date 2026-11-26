@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.35.1';
+const VERSION = '3.36.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -367,12 +367,31 @@ function arrowIcon() {
   return L.divIcon({ className: 'sarrow', iconSize: [44, 44], iconAnchor: [22, 22],
     html: `<svg class="asvg" width="44" height="44" viewBox="-22 -22 44 44"></svg>` });
 }
+/* v3.36.0 (26 nov. 2026, Henri) : appui bref sur une porte, la flèche de la porte unique ou le couloir → onglet Zones ouvert en RÉDUIT,
+   chapitre Portes calé sous les onglets avec les champs Cap et Longueur du couloir visibles (Cap seul pour une porte unique).
+   La fenêtre réduite est rallongée juste ce qu'il faut pour les deux champs (style.height, remis à zéro par setSheetSize).
+   Rien pendant une pose, une mesure, un étalonnage ou un « Déplacer » (le toucher reste à la carte). */
+function gatesTapBusy() { return !!(placing || meas.active || (typeof Calib !== 'undefined' && Calib.isActive()) || (typeof LPMove !== 'undefined' && LPMove.active)); }
+function openGatesSheet() {
+  if (Date.now() < suppressClickUntil) return; // fin d'un appui long
+  openSheet('reglages'); setSheetSize('mini');
+  setTimeout(() => {
+    const sh = $('sheet'), cap = $('capLabel').closest('.row'), len = $('lenRow'), tb = sh.querySelector('.tabs'), h3 = [...sh.querySelectorAll('#tab-reglages h3')].find(h => h.textContent.trim() === 'Portes');
+    if (!cap || !tb) return;
+    const last = len && !len.classList.contains('hidden') ? len : cap, S = () => sh.getBoundingClientRect();
+    const top = tb.getBoundingClientRect().bottom - S().top + (h3 ? h3.offsetHeight + 4 : 0); // sous les onglets et le titre « Portes » collé
+    const need = top + (last.getBoundingClientRect().bottom - cap.getBoundingClientRect().top) + 14 + (parseFloat(getComputedStyle(sh).paddingBottom) || 0);
+    if (need > sh.clientHeight) sh.style.height = Math.min(need, innerHeight * 0.6) + 'px';
+    sh.scrollTop += cap.getBoundingClientRect().top - S().top - top;
+  }, 230);
+}
 function makeArrowMarker() {
   const m = L.marker(LL(current.gateB), { draggable: false, icon: arrowIcon(), zIndexOffset: 1000 }).addTo(map);
   longPressDrag(m, ll => { // tourner le cap autour de la porte
     const v = Geo.toLocal(current.gateA, ll); if (Math.hypot(v.x, v.y) < 3) return;
     current.gateB = singleTip(current.gateA, Geo.bearingOf(v)); drawLight();
   }, () => { persist(); redraw(); });
+  m.on('click', ev => { if (gatesTapBusy()) return; L.DomEvent.stop(ev); openGatesSheet(); });
   return m;
 }
 // Appui long sur une porte : on ne déplace QUE cette porte (le cap et la longueur du couloir suivent).
@@ -388,6 +407,7 @@ function makeGateMarker(key) {
     drawLight();
   }, () => { vec = null; persist(); redraw(); },
   () => { vec = current.single && hasGates() ? Geo.toLocal(current.gateA, current.gateB) : null; });
+  m.on('click', ev => { if (gatesTapBusy()) return; L.DomEvent.stop(ev); openGatesSheet(); });
   return m;
 }
 // Appui long sur le trait blanc du couloir : on déplace tout le couloir (portes comprises), cap et longueur conservés.
@@ -398,6 +418,7 @@ function corridorHit() {
   const handle = { line, _lpDragging: false, getElement: () => line._path, setLatLng: () => {} };
   let ref = null, a0 = null, b0 = null;
   corrHit = { line, handle, attachedEl: null };
+  line.on('click', ev => { if (gatesTapBusy()) return; L.DomEvent.stop(ev); openGatesSheet(); });
   // Leaflet recrée l'élément <path> à chaque retour de la ligne sur la carte (nouvelle zone, autre zone, porte replacée) :
   // on rebranche l'appui long sur le NOUVEL élément, sinon le milieu du couloir ne répond plus.
   corrHit.attach = () => {
@@ -874,7 +895,7 @@ function onResize() {
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
 
 let sheetSize = 'full';
-function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', sz === 'mini'); $('sheet').classList.toggle('full', sz === 'full'); try { if (calSel) setTimeout(calScroll, 260); } catch (e) {} }
+function setSheetSize(sz) { sheetSize = sz; $('sheet').style.height = ''; $('sheet').classList.toggle('mini', sz === 'mini'); $('sheet').classList.toggle('full', sz === 'full'); try { if (calSel) setTimeout(calScroll, 260); } catch (e) {} }
 (function sheetGrab() {
   const g = $('grab'); let y0 = null, moved = false;
   const start = y => { y0 = y; moved = false; };
