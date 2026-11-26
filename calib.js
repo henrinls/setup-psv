@@ -38,6 +38,14 @@
   }
   let cur = null; /* consigne en cours (v3.31.5 / 1.16.4, Henri : le bandeau jaune reste affiché, même en déplaçant un point) */
   function refresh() { if (mode && cur) banner(cur.t, cur.gps); }
+  /* v3.31.6 / 1.16.5 (Henri) : zoomer ou déplacer la carte redessine l'appli, qui masquait le bandeau → s'il est masqué pendant
+     l'étalonnage, on le remet aussitôt (observateur sur sa classe), et après chaque déplacement / zoom de la carte */
+  let obs = null;
+  function watch() {
+    const b = $('banner'); if (!b || obs) return;
+    obs = new MutationObserver(() => { if (mode && cur && b.classList.contains('hidden')) setTimeout(refresh, 0); });
+    obs.observe(b, { attributes: true, attributeFilter: ['class'] });
+  }
   function banner(t, gps) {
     cur = { t, gps };
     const b = $('banner'); if (!b) return;
@@ -56,7 +64,7 @@
   function hideBanner() { cur = null; const b = $('banner'); if (b) b.classList.add('hidden'); }
   function clearLayers() { mks.concat(axis, handle ? [handle] : []).forEach(l => { if (l && o && o.map.hasLayer(l)) o.map.removeLayer(l); }); mks = []; axis = []; handle = null; }
   function start(opts) {
-    css(); if (mode) end(); o = opts; idx = 0; pts = [];
+    css(); if (mode) end(); o = opts; idx = 0; pts = []; watch(); o.map.on('moveend zoomend', refresh);
     if (o.steps && o.steps.length) { mode = 'place'; banner(o.steps[0].label, o.steps[0].gps); } else wind();
   }
   /* À appeler au début du clic sur la carte de l'appli : true = le clic est pris par l'étalonnage */
@@ -141,7 +149,7 @@
     o.map.on('zoomend rotate viewreset', drawAxis);
   }
   function end() {
-    if (o) o.map.off('zoomend rotate viewreset', drawAxis);
+    if (o) { o.map.off('zoomend rotate viewreset', drawAxis); o.map.off('moveend zoomend', refresh); }
     const p = $('calPanel'); if (p) p.remove();
     hideBanner();
     clearLayers(); const was = mode; mode = null;
