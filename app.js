@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.31.1';
+const VERSION = '3.31.2';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -1507,7 +1507,7 @@ async function startCalib() {
   if (cs.length > 1) { const k = await Calib.choose('Pour quel sens de poser ?', cs.map(x => ({ label: `${cfgName(x)} (cap ${hdg(x.heading)})`, value: x.key }))); if (!k) return; c = cs.find(x => x.key === k); }
   /* v3.31.1 (Henri) : option inverse — on pose d'abord le setup (et / ou le snap) là où il a eu lieu, puis la porte correspondante,
      seulement pour le calcul : la porte de la zone ne bouge pas. Même sens de poser (cap et virage) que le sens choisi. */
-  const ref = await Calib.choose('Porte de référence pour le calcul ?', [{ label: 'La porte de la zone', value: 'Z' }, { label: 'Je pose la porte (calcul seulement, la zone ne change pas)', value: 'P' }]);
+  const ref = await Calib.choose('Porte de référence pour le calcul ?', [{ label: 'La porte de la zone', value: 'Z' }, { label: 'Je pose la porte (calcul seulement)', value: 'P' }]);
   if (!ref) return;
   closeSheet(); placing = null; setBanner(null);
   const steps = [];
