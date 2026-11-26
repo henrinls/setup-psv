@@ -36,7 +36,10 @@
       document.body.append(d);
     });
   }
+  let cur = null; /* consigne en cours (v3.31.5 / 1.16.4, Henri : le bandeau jaune reste affiché, même en déplaçant un point) */
+  function refresh() { if (mode && cur) banner(cur.t, cur.gps); }
   function banner(t, gps) {
+    cur = { t, gps };
     const b = $('banner'); if (!b) return;
     b.textContent = t; b.classList.remove('hidden');
     if (gps && navigator.geolocation) { /* v3.31.4 (Henri) : proposer la position GPS actuelle (ex. porte de l'étalonnage inverse) */
@@ -50,7 +53,7 @@
     c.onclick = e => { e.stopPropagation(); cancel(); };
     b.classList.add('hasx'); b.append(c);
   }
-  function hideBanner() { const b = $('banner'); if (b) b.classList.add('hidden'); }
+  function hideBanner() { cur = null; const b = $('banner'); if (b) b.classList.add('hidden'); }
   function clearLayers() { mks.concat(axis, handle ? [handle] : []).forEach(l => { if (l && o && o.map.hasLayer(l)) o.map.removeLayer(l); }); mks = []; axis = []; handle = null; }
   function start(opts) {
     css(); if (mode) end(); o = opts; idx = 0; pts = [];
@@ -67,13 +70,13 @@
     const st = o.steps[idx];
     pts.push(p); addPoint(pts.length - 1, st.color);
     idx++;
-    if (idx < o.steps.length) banner(o.steps[idx].label, o.steps[idx].gps); else { hideBanner(); wind(); }
+    if (idx < o.steps.length) banner(o.steps[idx].label, o.steps[idx].gps); else wind();
   }
   /* v3.31.3 / 1.16.2 (Henri) : un point posé reste déplaçable (appui long puis glisser), même pendant l'étape suivante */
   function addPoint(i, color) {
     const p = pts[i], m = L.marker([p.lat, p.lng], { zIndexOffset: 1400, icon: L.divIcon({ className: 'calP', iconSize: [30, 30], iconAnchor: [15, 15], html: `<span style="background:${color || '#ff2020'}"></span>` }) }).addTo(o.map);
     mks.push(m);
-    const lp = root.longPressDrag; if (typeof lp === 'function') lp(m, ll => { pts[i] = { lat: ll.lat, lng: ll.lng }; m.setLatLng([ll.lat, ll.lng]); if (mode === 'wind') drawAxis(); }, () => { if (mode === 'wind') drawAxis(); });
+    const lp = root.longPressDrag; if (typeof lp === 'function') lp(m, ll => { pts[i] = { lat: ll.lat, lng: ll.lng }; m.setLatLng([ll.lat, ll.lng]); if (mode === 'wind') drawAxis(); }, () => { if (mode === 'wind') drawAxis(); setTimeout(refresh, 30); }, () => refresh());
   }
   function magOfTrue(t) { return Math.round(n360(t - (o.decl ? o.decl() : 0))); }
   function trueOfMag(m) { return n360(m + (o.decl ? o.decl() : 0)); }
@@ -81,7 +84,7 @@
     const map = o.map, A = o.anchor(pts); if (!A) return;
     axis.forEach(l => map.hasLayer(l) && map.removeLayer(l)); axis = [];
     const c = map.latLngToContainerPoint([A.lat, A.lng]), q = map.containerPointToLatLng([c.x + 100, c.y]), mpp = map.distance([A.lat, A.lng], q) / 100 || 1;
-    const Lm = 150 * mpp, r = w.dir * Math.PI / 180, u = { x: Math.sin(r), y: Math.cos(r) };
+    const Lm = 85 * mpp /* v3.31.5 / 1.16.4 (Henri) : poignée plus près du centre (85 px au lieu de 150), pour ne pas passer sous les boutons */, r = w.dir * Math.PI / 180, u = { x: Math.sin(r), y: Math.cos(r) };
     const P1 = Geo.fromLocal(A, { x: u.x * Lm, y: u.y * Lm }), P0 = Geo.fromLocal(A, { x: -u.x * Lm, y: -u.y * Lm });
     axis.push(L.polyline([[P0.lat, P0.lng], [P1.lat, P1.lng]], { color: '#000', weight: 4.5, opacity: .45, dashArray: '9 7', interactive: false }).addTo(map));
     axis.push(L.polyline([[P0.lat, P0.lng], [P1.lat, P1.lng]], { color: '#ff8c00', weight: 2.5, dashArray: '9 7', interactive: false }).addTo(map));
@@ -103,6 +106,7 @@
   const num = el => parseFloat(String(el.value).trim().replace(',', '.'));
   function wind() {
     mode = 'wind'; w = { dir: n360(+o.wind.dir || 0), spd: Math.max(0, +o.wind.spd || 0) }; hTouched = false;
+    banner(`Règle le vent${o.height ? ' et la hauteur' : ''}, puis Valider. Appui long sur un point posé pour le déplacer.`);
     let p = $('calPanel'); if (p) p.remove();
     p = document.createElement('div'); p.id = 'calPanel';
     p.innerHTML = `<div class="grip" title="Réduire / agrandir"><i></i></div><h4></h4>
@@ -139,7 +143,7 @@
   function end() {
     if (o) o.map.off('zoomend rotate viewreset', drawAxis);
     const p = $('calPanel'); if (p) p.remove();
-    if (mode === 'place') hideBanner();
+    hideBanner();
     clearLayers(); const was = mode; mode = null;
     if (was && o && o.onEnd) o.onEnd();
   }
