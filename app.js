@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.31.6';
+const VERSION = '3.32.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -203,6 +203,7 @@ function draw() {
   fig.clearLayers(); grads.clearLayers();
   if ((typeof Photo !== 'undefined')) Photo.sync();
   updateLegend(); updateAxisInfo(); syncQuick();
+  try { drawCalCloud(); } catch (e) {} /* v3.32.0 */
   if (!hasGates()) {
     if (!placing && current.gateA) placing = current.single ? 'SD' : 'B'; // il manque la 2e porte, ou la direction de la porte unique
     if (placing) placeBanner();
@@ -862,8 +863,9 @@ function openSheet(tab) {
   document.querySelectorAll('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   ['reglages', 'pilote'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== tab));
   if (tab === 'reglages') renderZones();
+  try { drawCalCloud(); } catch (e) {} /* v3.32.0 : nuage d'étalonnage, onglet Manœuvre (try : calHist pas encore déclaré au démarrage) */
 }
-function closeSheet() { $('sheet').classList.add('hidden'); }
+function closeSheet() { $('sheet').classList.add('hidden'); try { drawCalCloud(); } catch (e) {} }
 // Les deux boutons en haut à gauche ouvrent leur onglet ; second appui sur le même = fermer
 function toggleTab(t) { if (!$('sheet').classList.contains('hidden') && lastTab === t) closeSheet(); else openSheet(t); }
 $('btnManeuver').addEventListener('click', () => toggleTab('pilote'));
@@ -1395,7 +1397,7 @@ async function exportKind(kind) { /* v (Henri, 25/11/2026) : kind 'zone' = seule
   const who = String(n).trim(); store.set('psv.author', who);
   const obj = { app: 'setup-psv', kind, v: 4, exported: new Date().toISOString(), author: who };
   if (one) obj.kind = 'zones';
-  if (kind === 'zones' || one) obj.zones = one ? zones.filter(z => z.id === current.id) : zones; else obj.profile = profile;
+  if (kind === 'zones' || one) obj.zones = one ? zones.filter(z => z.id === current.id) : zones; else { obj.profile = profile; obj.calibHist = calHist; } /* v3.32.0 : l'historique d'étalonnage part avec la manœuvre */
   await shareJson(obj, `${dateStamp()}_Setup_PSV_${one ? 'Zone_' + safeName(current.name || 'zone') : kind === 'zones' ? 'Zones' : 'Manoeuvre'}${who ? '_' + safeName(who) : ''}.json`);
 }
 async function readJsonFile(input) {
@@ -1427,6 +1429,7 @@ $('importProfFile').addEventListener('change', async e => {
   const d = await readJsonFile(e.target); if (!d) return;
   if (!d.profile || typeof d.profile !== 'object') { toast(Array.isArray(d.zones) ? 'Ce fichier contient des zones : importe-le depuis l\'onglet Zones' : 'Fichier illisible'); return; }
   PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); profile.legLen = legLenOf(profile); store.set('psv.profile', profile);
+  if (Array.isArray(d.calibHist)) { const have = new Set(calHist.map(e => e.id)); d.calibHist.forEach(e => { if (e && e.id && !have.has(e.id)) calHist.push(e); }); calHist.sort((a, b) => b.t - a.t); saveHist(); renderHist(); } /* v3.32.0 : historique fusionné, sans doublons */
   zones.forEach(applyProfile); store.set('psv.zones', zones); applyProfile(current); persist(); fillInputs(); redraw();
   toast(`Manœuvre${fromWho(d)} importée`);
 });
@@ -1517,24 +1520,89 @@ async function startCalib() {
   const sw = Wind && Wind.surface ? Wind.surface() : null, gateOf = pts => ref === 'P' ? pts[pts.length - 1] : c.gate;
   Calib.start({ map, steps, anchor: pts => gateOf(pts || []), anchorName: ref === 'P' ? 'la porte posée' : 'la porte d\'entrée', decl: () => declHere(), title: 'Vent pendant ce saut',
     wind: { dir: sw ? sw.dir : c.heading, spd: sw ? sw.spd : 0 },
-    onOk: r => applyCalib(c, what, r, gateOf(r.pts)) });
+    extra: [{ id: 't1', label: 'Abattée + rotation', unit: 's', value: +current.params.t1 || 0 }, { id: 't2', label: 'Recouvrement', unit: 's', value: +current.params.t2 || 0 }],
+    onOk: r => recordCalib(c, what, r, gateOf(r.pts)) });
 }
-function applyCalib(c, what, r, gate) {
+/* v3.32.0 (Henri) : historique des sauts d'étalonnage. Valider un étalonnage ENREGISTRE le saut (il ne change plus la manœuvre) ;
+   chaque saut garde ses points BRUTS dans le repère du couloir (le long de l'axe / à droite de l'axe, par rapport à la porte), le vent
+   par rapport au cap du poser et ses deux temps (abattée + rotation, recouvrement, saisis à chaque étalonnage). Le « vent nul » est
+   recalculé à l'affichage (virage actuel de la manœuvre). Moyenne des sauts cochés (setup et snap à part, avec écart-type) →
+   « Appliquer la moyenne » ; « Appliquer » sur une ligne = ce saut seul. Nuage des sauts cochés sur la carte quand l'onglet Manœuvre est ouvert. */
+let calHist = store.get('psv.calibHist', []);
+const saveHist = () => store.set('psv.calibHist', calHist);
+function recordCalib(c, what, r, gate) {
   gate = gate || c.gate;
-  const p = Object.assign({}, current.params, { heading: c.heading, turn: c.turn }), g = Geo.turnGeom(p), wr = r.dir * Math.PI / 180;
-  const wv = { x: -Math.sin(wr) * r.spd, y: -Math.cos(wr) * r.spd }; /* vers où pousse le vent (m/s) */
-  const t1 = +p.t1 || 0, t2 = +p.t2 || 0, done = []; let i = 0;
-  if (what.includes('S')) {
-    const q = Geo.toLocal(gate, r.pts[i++]), S0 = { x: q.x + wv.x * (t1 + t2), y: q.y + wv.y * (t1 + t2) };
-    const back = Math.round(-(S0.x * g.f.x + S0.y * g.f.y)), side = Math.round(g.side * (S0.x * g.r.x + S0.y * g.r.y));
-    setManeuver('setupBack', back); setManeuver('setupSide', side); done.push(`setup ${back} m arrière · ${side} m latéral`);
-  }
-  if (what.includes('R')) {
-    const q = Geo.toLocal(gate, r.pts[i++]), R0 = { x: q.x + wv.x * t2, y: q.y + wv.y * t2 };
-    const back = Math.round(-(R0.x * g.f.x + R0.y * g.f.y)); setManeuver('recBack', back); done.push(`snap ${back} m arrière`);
-  }
-  store.set('psv.profile', profile); zones.forEach(applyProfile); store.set('psv.zones', zones);
-  persist(); fillInputs(); redraw();
-  toast(`Manœuvre étalonnée (vent nul) : ${done.join(' ; ')}`);
+  const { f, r: rr } = Geo.basis(c.heading), ax = ll => { const q = Geo.toLocal(gate, ll); return { a: q.x * f.x + q.y * f.y, l: q.x * rr.x + q.y * rr.y }; };
+  let i = 0; const e = { id: 'c' + Date.now().toString(36), t: Date.now(), zone: current.name || '', cfg: cfgName(c), turn: c.turn, wrel: ((r.dir - c.heading) % 360 + 360) % 360, spd: r.spd,
+    t1: r.extra && isFinite(r.extra.t1) ? r.extra.t1 : +current.params.t1 || 0, t2: r.extra && isFinite(r.extra.t2) ? r.extra.t2 : +current.params.t2 || 0, on: true };
+  if (what.includes('S')) e.S = ax(r.pts[i++]);
+  if (what.includes('R')) e.R = ax(r.pts[i++]);
+  calHist.unshift(e); saveHist(); renderHist(); redraw();
+  const z = calZero(e);
+  toast(`Saut enregistré (Manœuvre › Historique d'étalonnage)${z.S ? ` : setup ${z.S.back} m / ${z.S.side} m` : ''}${z.R ? `${z.S ? ',' : ' :'} snap ${z.R.back} m` : ''}`);
 }
+/* saut ramené au vent nul, en valeurs de manœuvre : { S: { back, side }, R: { back } } */
+function calZero(e) {
+  const rel = (e.wrel + 180) * Math.PI / 180, wa = e.spd * Math.cos(rel), wl = e.spd * Math.sin(rel); /* dérive le long de l'axe / à droite */
+  const g = Geo.turnGeom(Object.assign({}, current.params, { heading: 0, turn: e.turn })), out = {};
+  if (e.S) { const T = (+e.t1 || 0) + (+e.t2 || 0), a = e.S.a + wa * T, l = e.S.l + wl * T; out.S = { back: Math.round(-a), side: Math.round(g.side * l) }; }
+  if (e.R) { const T = +e.t2 || 0; out.R = { back: Math.round(-(e.R.a + wa * T)) }; }
+  return out;
+}
+function calStats() {
+  const on = calHist.filter(e => e.on), mean = a => a.reduce((x, y) => x + y, 0) / a.length, sd = a => a.length > 1 ? Math.sqrt(a.reduce((x, y) => x + (y - mean(a)) ** 2, 0) / (a.length - 1)) : 0;
+  const Z = on.map(calZero), Sb = Z.filter(z => z.S).map(z => z.S.back), Ss = Z.filter(z => z.S).map(z => z.S.side), Rb = Z.filter(z => z.R).map(z => z.R.back);
+  const st = a => a.length ? { m: mean(a), sd: sd(a), n: a.length } : null;
+  return { n: on.length, Sb: st(Sb), Ss: st(Ss), Rb: st(Rb), t1: st(on.map(e => +e.t1 || 0)), t2: st(on.map(e => +e.t2 || 0)) };
+}
+const f1 = x => String(Math.round(x * 10) / 10).replace('.', ',');
+function renderHist() {
+  const ul = $('calHist'); if (!ul) return;
+  if (!calHist.length) { ul.innerHTML = '<li class="mut">Aucun saut d\'étalonnage pour l\'instant.</li>'; $('calAvg').textContent = ''; $('calApplyAvg').disabled = true; return; }
+  ul.innerHTML = calHist.map(e => { const z = calZero(e), d = new Date(e.t), dd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<li class="calRow"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}> <span>${dd} · ${esc(e.zone)} · ${esc(e.cfg)} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b></span></label>
+      <span class="calBtns"><button data-apply="${e.id}" title="Appliquer ce saut seul à la manœuvre">Appliquer</button><button data-del="${e.id}" title="Supprimer">🗑</button></span></li>`; }).join('');
+  ul.querySelectorAll('[data-on]').forEach(b => b.addEventListener('change', () => { const e = calHist.find(x => x.id === b.dataset.on); if (e) { e.on = b.checked; saveHist(); renderAvg(); redraw(); } }));
+  ul.querySelectorAll('[data-apply]').forEach(b => b.addEventListener('click', () => { const e = calHist.find(x => x.id === b.dataset.apply); if (e) applyCalibValues(calZero(e), { t1: e.t1, t2: e.t2 }, 'ce saut'); }));
+  ul.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { if (!(await ask('Supprimer ce saut de l\'historique ?'))) return; calHist = calHist.filter(x => x.id !== b.dataset.del); saveHist(); renderHist(); redraw(); }));
+  renderAvg();
+}
+function renderAvg() {
+  const s = calStats(), el = $('calAvg');
+  if (!s.n) { el.textContent = 'Aucun saut coché.'; $('calApplyAvg').disabled = true; return; }
+  const sd = x => x.n > 1 ? ` (± ${Math.round(x.sd)})` : '';
+  el.innerHTML = `<b>Moyenne de ${s.n} saut${s.n > 1 ? 's' : ''} coché${s.n > 1 ? 's' : ''}</b><br>` +
+    (s.Sb ? `Setup : ${Math.round(s.Sb.m)} m arrière${sd(s.Sb)} · ${Math.round(s.Ss.m)} m latéral${sd(s.Ss)} — ${s.Sb.n} saut${s.Sb.n > 1 ? 's' : ''}<br>` : '') +
+    (s.Rb ? `Snap : ${Math.round(s.Rb.m)} m arrière${sd(s.Rb)} — ${s.Rb.n} saut${s.Rb.n > 1 ? 's' : ''}<br>` : '') +
+    `Temps : ${f1(s.t1.m)} s + ${f1(s.t2.m)} s`;
+  $('calApplyAvg').disabled = false;
+}
+function applyCalibValues(z, times, what) {
+  const done = [];
+  if (z.S) { setManeuver('setupBack', z.S.back); setManeuver('setupSide', z.S.side); done.push(`setup ${z.S.back} m / ${z.S.side} m`); }
+  if (z.R) { setManeuver('recBack', z.R.back); done.push(`snap ${z.R.back} m`); }
+  if (times) { setManeuver('t1', Math.round(times.t1 * 10) / 10); setManeuver('t2', Math.round(times.t2 * 10) / 10); done.push(`temps ${f1(times.t1)} + ${f1(times.t2)} s`); }
+  store.set('psv.profile', profile); zones.forEach(applyProfile); store.set('psv.zones', zones);
+  persist(); fillInputs(); redraw(); renderHist();
+  toast(`Manœuvre mise à jour avec ${what} : ${done.join(' ; ')}`);
+}
+$('calApplyAvg').addEventListener('click', () => { const s = calStats(); if (!s.n) return;
+  applyCalibValues({ S: s.Sb ? { back: Math.round(s.Sb.m), side: Math.round(s.Ss.m) } : null, R: s.Rb ? { back: Math.round(s.Rb.m) } : null }, { t1: s.t1.m, t2: s.t2.m }, `la moyenne de ${s.n} saut${s.n > 1 ? 's' : ''}`); });
+/* nuage sur la carte (onglet Manœuvre ouvert) : sauts cochés placés à la porte d'entrée du 1er sens affiché, avec la manœuvre actuelle */
+let calCloud = null;
+function drawCalCloud() {
+  if (calCloud) { map.removeLayer(calCloud); calCloud = null; }
+  if ($('sheet').classList.contains('hidden') || lastTab !== 'pilote' || !hasGates()) return;
+  const c = configs()[0]; if (!c) return;
+  const on = calHist.filter(e => e.on); if (!on.length) return;
+  const g = Geo.turnGeom(Object.assign({}, current.params, { heading: c.heading, turn: c.turn })), at = (back, side) => Geo.fromLocal(c.gate, { x: -back * g.f.x + g.side * side * g.r.x, y: -back * g.f.y + g.side * side * g.r.y });
+  calCloud = L.layerGroup().addTo(map); const s = calStats();
+  on.map(calZero).forEach(z => {
+    if (z.S) L.circleMarker(LL(at(z.S.back, z.S.side)), { radius: 4, color: '#111', weight: 1, fillColor: CFG_COLORS.setup, fillOpacity: .9, interactive: false }).addTo(calCloud);
+    if (z.R) L.circleMarker(LL(at(z.R.back, 0)), { radius: 4, color: '#111', weight: 1, fillColor: CFG_COLORS.rec, fillOpacity: .9, interactive: false }).addTo(calCloud);
+  });
+  if (s.Sb) L.circleMarker(LL(at(s.Sb.m, s.Ss.m)), { radius: 8, color: '#fff', weight: 2.5, fillColor: CFG_COLORS.setup, fillOpacity: .9, interactive: false }).addTo(calCloud);
+  if (s.Rb) L.circleMarker(LL(at(s.Rb.m, 0)), { radius: 8, color: '#fff', weight: 2.5, fillColor: CFG_COLORS.rec, fillOpacity: .9, interactive: false }).addTo(calCloud);
+}
+renderHist();
 $('btnCalib').addEventListener('click', startCalib);
