@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.30.1';
+const VERSION = '3.31.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -19,7 +19,7 @@ const BASEMAPS = {
 };
 const TILE_CACHE = 'psv-tiles-v2';
 const DEFAULT_PARAMS = {
-  t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30,
+  t1: 10, t2: 4, setupBack: 100, setupSide: 60, recBack: 30, turnDeg: 450, /* turnDeg (v3.31.0) : virage en degrés */
   vref: 5, legLen: 150, legTime: 10, legSpeed: 15, legHeight: 300, setupHeight: null, rings: true, ticks: true, labels: true, rec: true
 };
 // Mêmes couleurs pour les deux configurations (demande d'Henri)
@@ -60,7 +60,7 @@ store.set('psv.zones', zones);
 // ---------- Profil pilote : réglages communs à toutes les zones ----------
 // Temps du virage, déports du setup et du point de snap, vent de référence : c'est la façon de tourner
 // d'Henri, pas une propriété de la zone. Une modification se répercute sur toutes les zones enregistrées.
-const PROFILE_KEYS = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legSpeed', 'legHeight', 'setupHeight']; // + étape de base
+const PROFILE_KEYS = ['t1', 't2', 'turnDeg', 'setupBack', 'setupSide', 'recBack', 'vref', 'legLen', 'legTime', 'legSpeed', 'legHeight', 'setupHeight']; // + étape de base
 let profile = store.get('psv.profile', null);
 if (!profile) profile = {};
 PROFILE_KEYS.forEach(k => { if (profile[k] === undefined) profile[k] = current.params[k] !== undefined ? current.params[k] : DEFAULT_PARAMS[k]; }); // complète un profil plus ancien
@@ -580,7 +580,7 @@ function cancelPlacing() { placing = null; placeBanner(); syncPlaceBtn(); redraw
 let toastT;
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 2800); }
 
-const numFields = ['t1', 't2', 'setupBack', 'setupSide', 'recBack', 'vref', 'legTime', 'legSpeed', 'legHeight', 'setupHeight'];
+const numFields = ['t1', 't2', 'turnDeg', 'setupBack', 'setupSide', 'recBack', 'vref', 'legTime', 'legSpeed', 'legHeight', 'setupHeight'];
 const MEMO_FIELDS = ['legHeight', 'setupHeight']; // aide-mémoire : peuvent rester vides
 function fillInputs(only) {
   const p = current.params;
@@ -763,6 +763,7 @@ map.on('click', e => {
   if (Date.now() < suppressClickUntil) return; // fin d'un déplacement de point : pas un appui
   if ((typeof Photo !== 'undefined') && Photo.onMapClick(e)) return; // calage d'une photo aérienne en cours
   if ((typeof WindPick !== 'undefined') && WindPick.onMapClick(e)) return; // point choisi pour le tableau des vents
+  if ((typeof Calib !== 'undefined') && Calib.onMapClick(e)) return; /* v3.31.0 : étalonnage de la manœuvre */
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   if (!current.id) { if (!namingZone) { namingZone = true; askZoneName().then(ok => { namingZone = false; if (ok) map.fire('click', e); }); } return; } // nom d'abord, puis le point
@@ -1336,7 +1337,7 @@ async function renderPdfCanvas() {
   let ly = l0 + lh * 2.4;
   cfs.forEach(c => { tx(`${cfgName(c)} : poser au ${hdg(c.heading)}, virage à ${c.turn === 'G' ? 'gauche' : 'droite'}`, col1, ly, c.colors.setup, fs, true); ly += lh; });
   [
-    `Abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
+    `Virage ${p.turnDeg != null ? p.turnDeg : 450}° · abattée + rotation ${p.t1} s · recouvrement ${p.t2} s`,
     `Setup : ${p.setupBack} m arrière · ${p.setupSide} m latéral` + (p.setupHeight != null && p.setupHeight !== '' ? ` · hauteur ${p.setupHeight} m` : ''),
     `Point de snap : ${p.recBack} m arrière`,
     `Étape de base : ${p.legTime} s à ${p.legSpeed} m/s = ${p.legLen} m` + (p.legHeight != null && p.legHeight !== '' ? ` · entrée à ${p.legHeight} m` : ''),
@@ -1489,3 +1490,45 @@ Undo.init({ toast, ignore: [], state: () => ({ key: current.id || '', obj: curre
     if (current.params) { PROFILE_KEYS.forEach(k => { if (k in current.params) profile[k] = current.params[k]; }); store.set('psv.profile', profile); zones.forEach(applyProfile); }
     resetGateMarkers(); placing = null; setBanner(null); fillInputs(); /* Henri : ni onglet, ni fenêtre, ni zoom ne changent */ redraw(); persist();
   } });
+
+/* ---------- v3.31.0 (Henri) : étalonner la manœuvre sur la carte (calib.js, commun avec prepo-PA) ----------
+   Bouton de l'onglet Manœuvre → choix : poser le setup, le snap ou les deux → pose sur la carte → vent (force, axe d'où il vient,
+   axe orange passant par la porte d'entrée) → la manœuvre est recalculée.
+   Le setup et le snap de la manœuvre sont ceux du VENT NUL : un point posé par vent v est ramené au vent nul en le décalant
+   de la dérive pendant le temps qui reste jusqu'aux portes (setup : abattée + rotation + recouvrement ; snap : recouvrement),
+   comme les cercles des 5 m/s. Le snap reste dans l'axe : seule sa distance arrière est gardée. */
+function setManeuver(k, v) { current.params[k] = v; profile[k] = v; }
+async function startCalib() {
+  if (!hasGates()) { toast('Place d\'abord les portes (☰ Zones)'); return; }
+  const what = await Calib.choose('Étalonner ta manœuvre : que veux-tu poser sur la carte ?', [{ label: 'Le point de setup', value: 'S' }, { label: 'Le point de snap', value: 'R' }, { label: 'Les deux', value: 'SR' }]);
+  if (!what) return;
+  let cs = configs(); if (!cs.length) { current.show = 'AB'; cs = configs(); }
+  let c = cs[0];
+  if (cs.length > 1) { const k = await Calib.choose('Pour quel sens de poser ?', cs.map(x => ({ label: `${cfgName(x)} (cap ${hdg(x.heading)})`, value: x.key }))); if (!k) return; c = cs.find(x => x.key === k); }
+  closeSheet(); placing = null; setBanner(null);
+  const steps = [];
+  if (what.includes('S')) steps.push({ label: `Touche la carte à l'endroit de ton point de setup (${cfgName(c)}).`, color: CFG_COLORS.setup });
+  if (what.includes('R')) steps.push({ label: `Touche la carte à l'endroit de ton point de snap (${cfgName(c)}).`, color: CFG_COLORS.rec });
+  const sw = Wind && Wind.surface ? Wind.surface() : null;
+  Calib.start({ map, steps, anchor: () => c.gate, anchorName: 'la porte d\'entrée', decl: () => declHere(), title: 'Vent pendant ce saut',
+    wind: { dir: sw ? sw.dir : c.heading, spd: sw ? sw.spd : 0 },
+    onOk: r => applyCalib(c, what, r) });
+}
+function applyCalib(c, what, r) {
+  const p = Object.assign({}, current.params, { heading: c.heading, turn: c.turn }), g = Geo.turnGeom(p), wr = r.dir * Math.PI / 180;
+  const wv = { x: -Math.sin(wr) * r.spd, y: -Math.cos(wr) * r.spd }; /* vers où pousse le vent (m/s) */
+  const t1 = +p.t1 || 0, t2 = +p.t2 || 0, done = []; let i = 0;
+  if (what.includes('S')) {
+    const q = Geo.toLocal(c.gate, r.pts[i++]), S0 = { x: q.x + wv.x * (t1 + t2), y: q.y + wv.y * (t1 + t2) };
+    const back = Math.round(-(S0.x * g.f.x + S0.y * g.f.y)), side = Math.round(g.side * (S0.x * g.r.x + S0.y * g.r.y));
+    setManeuver('setupBack', back); setManeuver('setupSide', side); done.push(`setup ${back} m arrière · ${side} m latéral`);
+  }
+  if (what.includes('R')) {
+    const q = Geo.toLocal(c.gate, r.pts[i++]), R0 = { x: q.x + wv.x * t2, y: q.y + wv.y * t2 };
+    const back = Math.round(-(R0.x * g.f.x + R0.y * g.f.y)); setManeuver('recBack', back); done.push(`snap ${back} m arrière`);
+  }
+  store.set('psv.profile', profile); zones.forEach(applyProfile); store.set('psv.zones', zones);
+  persist(); fillInputs(); redraw();
+  toast(`Manœuvre étalonnée (vent nul) : ${done.join(' ; ')}`);
+}
+$('btnCalib').addEventListener('click', startCalib);

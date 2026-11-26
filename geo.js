@@ -33,21 +33,29 @@
   }
 
   // Calcule toute la figure en coordonnées locales.
+  /* v3.31.0 (Henri) : virage réglable (p.turnDeg, 450° par défaut). L'étape de base est la route suivie AVANT le virage :
+     cap du poser − virage (virage à droite) ou + virage (à gauche). Le setup est du côté d'où vient l'étape de base :
+     à 450° (ou 90°), côté du virage ; à 270° (ou 630°), côté opposé — gauche et droite s'inversent. Déport latéral négatif :
+     setup de l'autre côté, étape de base retournée (comme avant). */
+  function turnGeom(p) {
+    const { f, r } = basis(p.heading), s = p.turn === 'G' ? -1 : 1, T = isFinite(+p.turnDeg) && p.turnDeg !== '' && p.turnDeg != null ? +p.turnDeg : 450;
+    const a = rad(p.heading - s * T), d = { x: Math.sin(a), y: Math.cos(a) }, lat = d.x * r.x + d.y * r.y;
+    const side = lat < -1e-6 ? 1 : lat > 1e-6 ? -1 : s; /* côté du setup (+1 droite, −1 gauche), à l'opposé de là où va l'étape de base */
+    return { f, r, s, side, d, T };
+  }
   function compute(p) {
     const t1 = +p.t1 || 0, t2 = +p.t2 || 0, v = +p.vref || 0;
-    const setup = offsetPoint(p.heading, p.turn, +p.setupBack || 0, +p.setupSide || 0);
+    const g = turnGeom(p), { f, r } = g, back = +p.setupBack || 0, sd = +p.setupSide || 0;
+    const setup = { x: -back * f.x + g.side * sd * r.x, y: -back * f.y + g.side * sd * r.y };
     const rec = offsetPoint(p.heading, p.turn, +p.recBack || 0, 0);
-    const { f, r } = basis(p.heading);
-    // Côté extérieur du setup (vers où s'éloigne la branche) : côté du virage, ou opposé si déport négatif
-    const s = p.turn === 'G' ? -1 : 1;
-    const sideSign = (+p.setupSide || 0) < 0 ? -s : s;
-    const out = { x: sideSign * r.x, y: sideSign * r.y };
+    let d = g.d; if (sd < 0) { const la = d.x * r.x + d.y * r.y; d = { x: d.x - 2 * la * r.x, y: d.y - 2 * la * r.y }; } /* setup de l'autre côté : étape de base en miroir */
     const L = +p.legLen || 0;
-    const legStart = { x: setup.x + L * out.x, y: setup.y + L * out.y };
+    const legStart = { x: setup.x - L * d.x, y: setup.y - L * d.y };
     return {
       gates: { x: 0, y: 0 },
       setup, rec, legStart,
-      legHeading: bearingOf({ x: -out.x, y: -out.y }), // cap suivi sur la branche (vers l'axe)
+      legHeading: bearingOf(d), // cap suivi sur l'étape de base (vers le setup)
+      setupSide: g.side, turnDeg: g.T,
       rSetup: v * (t1 + t2),
       rRec: v * t2,
       f, r
@@ -86,6 +94,6 @@
     return out;
   }
 
-  const api = { toLocal, fromLocal, bearingOf, basis, offsetPoint, compute, tickSteps, degTicks };
+  const api = { toLocal, fromLocal, bearingOf, basis, offsetPoint, compute, turnGeom, tickSteps, degTicks };
   if (typeof module !== 'undefined') module.exports = api; else root.Geo = api;
 })(this);
