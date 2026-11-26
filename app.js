@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.33.0';
+const VERSION = '3.33.1';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -102,8 +102,13 @@ const hdg = h => String(magOf(h)).padStart(3, '0') + '° M';
 function headingOf(key) { const h = axisHeading(); return key === 'A' ? h : (h + 180) % 360; }
 // Nom d'un sens de poser : point cardinal le plus proche ; pile entre deux (45°, 135°…) → N ou S par convention
 function cardOf(h) { h = ((h % 360) + 360) % 360; if (h >= 315 || h <= 45) return 'N'; if (h >= 135 && h <= 225) return 'S'; return h < 180 ? 'E' : 'O'; }
-function cfgName(c) { return `${cardOf(c.heading)} ${c.turn}`; }
-function cfgNameKey(key) { return hasGates() ? `${cardOf(headingOf(key))} ${current['turn' + key]}` : (key === 'A' ? 'porte 1' : 'porte 2'); }
+/* v3.33.1 (Henri) : nom d'un sens de poser = point cardinal en entier, « · », puis G ou D (ex. « Ouest · G ») */
+const CARD_FULL = { N: 'Nord', E: 'Est', S: 'Sud', O: 'Ouest' };
+const cardFull = h => CARD_FULL[cardOf(h)];
+const cfgLabel = (h, turn) => `${cardFull(h)} · ${turn}`;
+const cfgOld = s => String(s || '').replace(/^([NESO]) ([GD])$/, (m, c, t) => `${CARD_FULL[c]} · ${t}`); /* anciens noms « O G » de l'historique */
+function cfgName(c) { return cfgLabel(c.heading, c.turn); }
+function cfgNameKey(key) { return hasGates() ? cfgLabel(headingOf(key), current['turn' + key]) : (key === 'A' ? 'porte 1' : 'porte 2'); }
 const showLabels = () => false; // textes sur les éléments : jamais affichés (demande d'Henri)
 const showRec = () => current.params.rec !== false; // point de snap + son cercle (le temps de recouvrement = du point de snap aux portes)
 
@@ -633,8 +638,8 @@ WindPick.init({ map, isOpen: () => Wind.isOpen(), open: () => Wind.open(), close
 function syncQuick() {
   $('qWinds').classList.toggle('on', !!Wind && Wind.isOpen());
   const p = current.params, sh = current.show;
-  const h = k => hasGates() ? cardOf(headingOf(k)) : (k === 'A' ? 'P1' : 'P2');
-  const t = k => `${h(k)} ${current['turn' + k] === 'G' ? '↺ G' : '↻ D'}`;
+  const h = k => hasGates() ? cardFull(headingOf(k)) : (k === 'A' ? 'P1' : 'P2');
+  const t = k => `${h(k)} · ${current['turn' + k] === 'G' ? 'G' : 'D'}`; /* v3.33.1 (Henri) : « Ouest · G » */
   $('qTurnA').textContent = t('A'); $('qTurnB').textContent = t('B');
   $('qShowB').classList.toggle('hidden', !!current.single); $('qTurnB').classList.toggle('hidden', !!current.single);
   $('qShowA').classList.toggle('on', current.single ? sh !== 'none' : (sh === 'AB' || sh === 'A')); $('qShowB').classList.toggle('on', sh === 'AB' || sh === 'B');
@@ -1308,8 +1313,8 @@ async function renderPdfCanvas() {
     dot(c.setup, col.setup, 8, `Setup ${cfgName(c)}`);
     if (showRec()) dot(c.rec, col.rec, 6.5, `Snap ${cfgName(c)}`);
   });
-  gateMark('A', `Portes ${cardOf(headingOf('A'))}`);
-  if (!current.single) gateMark('B', `Portes ${cardOf(headingOf('B'))}`);
+  gateMark('A', `Portes ${cardFull(headingOf('A'))}`);
+  if (!current.single) gateMark('B', `Portes ${cardFull(headingOf('B'))}`);
   { const w = Wind && Wind.surface ? Wind.surface() : null, sp = barbSpot(toC, u); if (sp) Barb.pdf(g, w, sp.ll, toC, u, () => sp.c); } /* v3.29.1 : une barbule du vent au sol, entre les portes ou à la porte unique */
 
   // ---- Flèche du nord (haut droite) ----
@@ -1563,7 +1568,7 @@ function renderHist() {
   const ul = $('calHist'); if (!ul) return;
   if (!calHist.length) { ul.innerHTML = '<li class="mut">Aucun saut d\'étalonnage pour l\'instant.</li>'; $('calAvg').textContent = ''; $('calApplyAvg').disabled = true; return; }
   ul.innerHTML = calHist.map(e => { const z = calZero(e), d = new Date(e.t), dd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
-    return `<li class="calRow"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}> <span>${dd} · ${esc(e.zone)} · ${esc(e.cfg)} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b>${e.note ? `<br><i class="calNote">${esc(e.note)}</i>` : ''}</span></label>
+    return `<li class="calRow"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}> <span>${dd} · ${esc(e.zone)} · ${esc(cfgOld(e.cfg))} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b>${e.note ? `<br><i class="calNote">${esc(e.note)}</i>` : ''}</span></label>
       <span class="calBtns"><button data-apply="${e.id}" title="Appliquer ce saut seul à la manœuvre">Appliquer</button><button data-note="${e.id}" title="Commentaire">✏️</button><button data-del="${e.id}" title="Supprimer">🗑</button></span></li>`; }).join('');
   ul.querySelectorAll('[data-on]').forEach(b => b.addEventListener('change', () => { const e = calHist.find(x => x.id === b.dataset.on); if (e) { e.on = b.checked; saveHist(); renderAvg(); redraw(); } }));
   ul.querySelectorAll('[data-apply]').forEach(b => b.addEventListener('click', () => { const e = calHist.find(x => x.id === b.dataset.apply); if (e) applyCalibValues(calZero(e), { t1: e.t1, t2: e.t2 }, 'ce saut'); }));
