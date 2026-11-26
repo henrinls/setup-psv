@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.31.3';
+const VERSION = '3.31.4';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -1513,7 +1513,7 @@ async function startCalib() {
   const steps = [];
   if (what.includes('S')) steps.push({ label: `Touche la carte à l'endroit de ton point de setup (${cfgName(c)}).`, color: CFG_COLORS.setup });
   if (what.includes('R')) steps.push({ label: `Touche la carte à l'endroit de ton point de snap (${cfgName(c)}).`, color: CFG_COLORS.rec });
-  if (ref === 'P') steps.push({ label: `Touche la carte à l'endroit de la porte d'entrée correspondante (calcul seulement).`, color: '#ff8c00' });
+  if (ref === 'P') steps.push({ label: `Touche la carte à l'endroit de la porte d'entrée correspondante (calcul seulement), ou prends ta position.`, color: '#ff8c00', gps: true });
   const sw = Wind && Wind.surface ? Wind.surface() : null, gateOf = pts => ref === 'P' ? pts[pts.length - 1] : c.gate;
   Calib.start({ map, steps, anchor: pts => gateOf(pts || []), anchorName: ref === 'P' ? 'la porte posée' : 'la porte d\'entrée', decl: () => declHere(), title: 'Vent pendant ce saut',
     wind: { dir: sw ? sw.dir : c.heading, spd: sw ? sw.spd : 0 },

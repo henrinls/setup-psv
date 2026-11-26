@@ -14,9 +14,11 @@
     if ($('calCss')) return;
     const s = document.createElement('style'); s.id = 'calCss';
     s.textContent = `#calPanel{position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(420px,calc(100vw - 16px));z-index:1600;background:rgba(20,20,20,.94);border:1px solid #555;border-radius:12px;padding:10px 12px;color:#fff;box-sizing:border-box}
-#calPanel h4{margin:0 0 6px;font-size:15px}#calPanel .row{display:flex;align-items:center;gap:6px;margin:6px 0}#calPanel label{flex:0 0 auto;min-width:96px;font-size:13px;color:#ccc}
+#calPanel h4{margin:0 0 6px;font-size:15px}#calPanel .grip{display:flex;justify-content:center;padding:2px 0 8px;margin:-4px 0 0;cursor:grab;touch-action:none}#calPanel .grip i{display:block;width:44px;height:5px;border-radius:3px;background:#777}
+#calPanel.mini h4,#calPanel.mini .row:not(.ax),#calPanel.mini .hint,#calPanel.mini .btns{display:none}#calPanel.mini{padding-top:6px;padding-bottom:6px}#calPanel .row{display:flex;align-items:center;gap:6px;margin:6px 0}#calPanel label{flex:0 0 auto;min-width:96px;font-size:13px;color:#ccc}
 #calPanel input{width:72px;font-size:16px;padding:6px;border-radius:7px;border:1px solid #666;background:#111;color:#fff;text-align:center}#calPanel .st button{min-width:38px;height:36px;padding:0 6px}
 #calPanel .btns{display:flex;gap:8px;margin-top:8px}#calPanel .btns button{flex:1;height:42px}#calPanel .hint{font-size:12px;color:#aaa;margin:2px 0 0}
+#banner .calGps{display:inline-block;margin:6px 0 0 6px;background:#111;color:#ffd400;border:1px solid #111;padding:5px 12px;height:auto;font-weight:700;border-radius:9px;font-size:14px}
 .calP span{display:block;width:16px;height:16px;margin:7px;border-radius:50%;border:2px solid #111;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
 .calH span{display:block;width:22px;height:22px;border-radius:50%;background:#ff8c00;border:2px solid #fff;box-shadow:0 0 0 1.5px #000}
 #calChoose{position:fixed;inset:0;z-index:1700;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}#calChoose .box{background:#1c1c1c;border:1px solid #555;border-radius:12px;padding:14px;width:min(360px,calc(100vw - 32px));color:#fff}
@@ -34,9 +36,16 @@
       document.body.append(d);
     });
   }
-  function banner(t) {
+  function banner(t, gps) {
     const b = $('banner'); if (!b) return;
     b.textContent = t; b.classList.remove('hidden');
+    if (gps && navigator.geolocation) { /* v3.31.4 (Henri) : proposer la position GPS actuelle (ex. porte de l'étalonnage inverse) */
+      const g = document.createElement('button'); g.className = 'calGps'; g.textContent = '📡 Ma position';
+      g.onclick = e => { e.stopPropagation(); g.disabled = true; g.textContent = '📡 …';
+        navigator.geolocation.getCurrentPosition(pos => { if (mode === 'place') placeAt({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+          () => { g.disabled = false; g.textContent = '📡 Ma position'; if (root.toast) try { root.toast('Position GPS indisponible'); } catch (er) {} }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }); };
+      b.append(' ', g);
+    }
     const c = document.createElement('button'); c.className = 'bcancel'; c.textContent = '✕'; c.title = 'Annuler l\'étalonnage';
     c.onclick = e => { e.stopPropagation(); cancel(); };
     b.classList.add('hasx'); b.append(c);
@@ -45,17 +54,20 @@
   function clearLayers() { mks.concat(axis, handle ? [handle] : []).forEach(l => { if (l && o && o.map.hasLayer(l)) o.map.removeLayer(l); }); mks = []; axis = []; handle = null; }
   function start(opts) {
     css(); if (mode) end(); o = opts; idx = 0; pts = [];
-    if (o.steps && o.steps.length) { mode = 'place'; banner(o.steps[0].label); } else wind();
+    if (o.steps && o.steps.length) { mode = 'place'; banner(o.steps[0].label, o.steps[0].gps); } else wind();
   }
   /* À appeler au début du clic sur la carte de l'appli : true = le clic est pris par l'étalonnage */
   function onMapClick(e) {
     if (!mode) return false;
     if (mode !== 'place') return true; /* fenêtre du vent ouverte : la carte ne pose rien */
-    const p = { lat: e.latlng.lat, lng: e.latlng.lng }, st = o.steps[idx];
+    placeAt({ lat: e.latlng.lat, lng: e.latlng.lng });
+    return true;
+  }
+  function placeAt(p) {
+    const st = o.steps[idx];
     pts.push(p); addPoint(pts.length - 1, st.color);
     idx++;
-    if (idx < o.steps.length) banner(o.steps[idx].label); else { hideBanner(); wind(); }
-    return true;
+    if (idx < o.steps.length) banner(o.steps[idx].label, o.steps[idx].gps); else { hideBanner(); wind(); }
   }
   /* v3.31.3 / 1.16.2 (Henri) : un point posé reste déplaçable (appui long puis glisser), même pendant l'étape suivante */
   function addPoint(i, color) {
@@ -93,10 +105,10 @@
     mode = 'wind'; w = { dir: n360(+o.wind.dir || 0), spd: Math.max(0, +o.wind.spd || 0) }; hTouched = false;
     let p = $('calPanel'); if (p) p.remove();
     p = document.createElement('div'); p.id = 'calPanel';
-    p.innerHTML = `<h4></h4>
+    p.innerHTML = `<div class="grip" title="Réduire / agrandir"><i></i></div><h4></h4>
       <div class="row"><label>Force du vent</label><input id="c_spd" inputmode="decimal"> <span>m/s</span></div>
-      <div class="row"><label>Axe (d'où il vient)</label><input id="c_dir" inputmode="numeric"> <span>° M</span></div>
-      <div class="row st"><label></label><button data-d="-5">−5</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="5">+5</button></div>
+      <div class="row ax"><label>Axe (d'où il vient)</label><input id="c_dir" inputmode="numeric"> <span>° M</span></div>
+      <div class="row st ax"><label></label><button data-d="-5">−5</button><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="5">+5</button></div>
       ${o.height ? `<div class="row"><label>${o.hLabel || 'Hauteur'}</label><input id="c_h" inputmode="decimal"> <span>m</span></div>` : ''}
       <p class="hint">L'axe orange passe par ${o.anchorName || 'le point de référence'} : fais glisser le rond orange pour le tourner.</p>
       <div class="btns"><button id="c_no">Annuler</button><button id="c_ok" class="primary">Valider</button></div>`;
@@ -108,6 +120,12 @@
     $('c_dir').addEventListener('blur', syncPanel);
     p.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => { w.dir = trueOfMag(magOfTrue(w.dir) + +b.dataset.d); syncPanel(); drawAxis(); }));
     if (o.height) $('c_h').addEventListener('input', () => { hTouched = true; });
+    /* v3.31.4 / 1.16.3 (Henri) : la fenêtre se descend (glisser vers le bas ou toucher la barre) pour bien voir la carte, comme dans Plans :
+       réduite, elle ne garde que l'axe du vent (champ et −5 −1 +1 +5) ; glisser vers le haut ou toucher la barre la rouvre */
+    const grip = p.querySelector('.grip'); let y0 = null;
+    const setMini = on => p.classList.toggle('mini', on);
+    grip.addEventListener('pointerdown', e => { y0 = e.clientY; try { grip.setPointerCapture(e.pointerId); } catch (er) {} });
+    grip.addEventListener('pointerup', e => { if (y0 === null) return; const dy = e.clientY - y0; y0 = null; if (dy > 25) setMini(true); else if (dy < -25) setMini(false); else setMini(!p.classList.contains('mini')); });
     $('c_no').onclick = cancel;
     $('c_ok').onclick = () => {
       const h = o.height ? num($('c_h')) : null;
