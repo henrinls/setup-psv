@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.33.1';
+const VERSION = '3.34.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -770,6 +770,7 @@ map.on('click', e => {
   if ((typeof Photo !== 'undefined') && Photo.onMapClick(e)) return; // calage d'une photo aérienne en cours
   if ((typeof WindPick !== 'undefined') && WindPick.onMapClick(e)) return; // point choisi pour le tableau des vents
   if ((typeof Calib !== 'undefined') && Calib.onMapClick(e)) return; /* v3.31.0 : étalonnage de la manœuvre */
+  try { if (calSel && !placing && calCloud) { calSel = null; renderHist(); drawCalCloud(); return; } } catch (er) {} /* v3.34.0 : toucher le fond de carte = désélectionner le saut */
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   if (!current.id) { if (!namingZone) { namingZone = true; askZoneName().then(ok => { namingZone = false; if (ok) map.fire('click', e); }); } return; } // nom d'abord, puis le point
@@ -1537,6 +1538,11 @@ async function startCalib() {
    recalculé à l'affichage (virage actuel de la manœuvre). Moyenne des sauts cochés (setup et snap à part, avec écart-type) →
    « Appliquer la moyenne » ; « Appliquer » sur une ligne = ce saut seul. Nuage des sauts cochés sur la carte quand l'onglet Manœuvre est ouvert. */
 let calHist = store.get('psv.calibHist', []);
+/* v3.34.0 (Henri) : un saut sélectionné (liste ou carte) est mis en évidence : sur la carte, ses points sont allumés et tous les autres
+   (moyenne comprise) passent en transparence ; dans la liste, sa ligne est en surbrillance. Re-toucher = désélectionner ; toucher le fond
+   de carte ailleurs (onglet Manœuvre ouvert) = désélectionner. Rien ne change d'onglet ni de taille de fenêtre. */
+let calSel = null;
+function calSelect(id) { calSel = calSel === id ? null : id; renderHist(); drawCalCloud(); }
 const saveHist = () => store.set('psv.calibHist', calHist);
 function recordCalib(c, what, r, gate) {
   gate = gate || c.gate;
@@ -1568,12 +1574,13 @@ function renderHist() {
   const ul = $('calHist'); if (!ul) return;
   if (!calHist.length) { ul.innerHTML = '<li class="mut">Aucun saut d\'étalonnage pour l\'instant.</li>'; $('calAvg').textContent = ''; $('calApplyAvg').disabled = true; return; }
   ul.innerHTML = calHist.map(e => { const z = calZero(e), d = new Date(e.t), dd = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
-    return `<li class="calRow"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}> <span>${dd} · ${esc(e.zone)} · ${esc(cfgOld(e.cfg))} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b>${e.note ? `<br><i class="calNote">${esc(e.note)}</i>` : ''}</span></label>
+    return `<li class="calRow${calSel === e.id ? ' sel' : ''}"><label><input type="checkbox" data-on="${e.id}"${e.on ? ' checked' : ''}></label><span class="calTxt" data-sel="${e.id}" title="Toucher pour mettre ce saut en évidence">${dd} · ${esc(e.zone)} · ${esc(cfgOld(e.cfg))} · vent ${f1(e.spd)} m/s · ${f1(e.t1)} + ${f1(e.t2)} s<br><b>${z.S ? `setup ${z.S.back} m arrière / ${z.S.side} m latéral` : ''}${z.S && z.R ? ' · ' : ''}${z.R ? `snap ${z.R.back} m` : ''}</b>${e.note ? `<br><i class="calNote">${esc(e.note)}</i>` : ''}</span>
       <span class="calBtns"><button data-apply="${e.id}" title="Appliquer ce saut seul à la manœuvre">Appliquer</button><button data-note="${e.id}" title="Commentaire">✏️</button><button data-del="${e.id}" title="Supprimer">🗑</button></span></li>`; }).join('');
+  ul.querySelectorAll('[data-sel]').forEach(b => b.addEventListener('click', () => calSelect(b.dataset.sel))); /* v3.34.0 : toucher une ligne = la sélectionner, re-toucher = désélectionner */
   ul.querySelectorAll('[data-on]').forEach(b => b.addEventListener('change', () => { const e = calHist.find(x => x.id === b.dataset.on); if (e) { e.on = b.checked; saveHist(); renderAvg(); redraw(); } }));
   ul.querySelectorAll('[data-apply]').forEach(b => b.addEventListener('click', () => { const e = calHist.find(x => x.id === b.dataset.apply); if (e) applyCalibValues(calZero(e), { t1: e.t1, t2: e.t2 }, 'ce saut'); }));
   ul.querySelectorAll('[data-note]').forEach(b => b.addEventListener('click', async () => { const e = calHist.find(x => x.id === b.dataset.note); if (!e) return; const t = await ask('Commentaire de ce saut :', e.note || ''); if (t === null) return; e.note = String(t).trim(); saveHist(); renderHist(); })); /* v3.33.0 (Henri) : commentaire libre */
-  ul.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { if (!(await ask('Supprimer ce saut de l\'historique ?'))) return; calHist = calHist.filter(x => x.id !== b.dataset.del); saveHist(); renderHist(); redraw(); }));
+  ul.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { if (!(await ask('Supprimer ce saut de l\'historique ?'))) return; calHist = calHist.filter(x => x.id !== b.dataset.del); if (calSel === b.dataset.del) calSel = null; saveHist(); renderHist(); redraw(); }));
   renderAvg();
 }
 function renderAvg() {
@@ -1604,15 +1611,16 @@ function drawCalCloud() {
   if (calCloud) { map.removeLayer(calCloud); calCloud = null; }
   if ($('sheet').classList.contains('hidden') || lastTab !== 'pilote' || !hasGates()) return;
   const c = configs()[0]; if (!c) return;
-  const on = calHist.filter(e => e.on); if (!on.length) return;
+  const sel = calSel && calHist.find(e => e.id === calSel), on = calHist.filter(e => e.on || e === sel); if (!on.length) return;
   const g = Geo.turnGeom(Object.assign({}, current.params, { heading: c.heading, turn: c.turn })), at = (back, side) => Geo.fromLocal(c.gate, { x: -back * g.f.x + g.side * side * g.r.x, y: -back * g.f.y + g.side * side * g.r.y });
-  calCloud = L.layerGroup().addTo(map); const s = calStats();
-  on.map(calZero).forEach(z => {
-    if (z.S) L.circleMarker(LL(at(z.S.back, z.S.side)), { radius: 4, color: '#111', weight: 1, fillColor: CFG_COLORS.setup, fillOpacity: .9, interactive: false }).addTo(calCloud);
-    if (z.R) L.circleMarker(LL(at(z.R.back, 0)), { radius: 4, color: '#111', weight: 1, fillColor: CFG_COLORS.rec, fillOpacity: .9, interactive: false }).addTo(calCloud);
-  });
-  if (s.Sb) L.circleMarker(LL(at(s.Sb.m, s.Ss.m)), { radius: 8, color: '#fff', weight: 2.5, fillColor: CFG_COLORS.setup, fillOpacity: .9, interactive: false }).addTo(calCloud);
-  if (s.Rb) L.circleMarker(LL(at(s.Rb.m, 0)), { radius: 8, color: '#fff', weight: 2.5, fillColor: CFG_COLORS.rec, fillOpacity: .9, interactive: false }).addTo(calCloud);
+  calCloud = L.layerGroup().addTo(map); const s = calStats(), dim = sel ? .22 : .9;
+  const pt = (ll, col, e) => { const me = sel && e === sel;
+    L.circleMarker(LL(ll), { radius: me ? 7 : 4, color: me ? '#fff' : '#111', weight: me ? 2.5 : 1, opacity: me || !sel ? 1 : .35, fillColor: col, fillOpacity: me ? 1 : dim, interactive: false }).addTo(calCloud);
+    const hit = L.circleMarker(LL(ll), { radius: 14, stroke: false, fillOpacity: 0, interactive: true, bubblingMouseEvents: false }).addTo(calCloud); /* zone de toucher plus grande que le point */
+    hit.on('click', ev => { if (ev.originalEvent) L.DomEvent.stop(ev.originalEvent); calSelect(e.id); }); };
+  on.forEach(e => { const z = calZero(e); if (z.S) pt(at(z.S.back, z.S.side), CFG_COLORS.setup, e); if (z.R) pt(at(z.R.back, 0), CFG_COLORS.rec, e); });
+  if (s.Sb) L.circleMarker(LL(at(s.Sb.m, s.Ss.m)), { radius: 8, color: '#fff', weight: 2.5, opacity: sel ? .35 : 1, fillColor: CFG_COLORS.setup, fillOpacity: sel ? .22 : .9, interactive: false }).addTo(calCloud);
+  if (s.Rb) L.circleMarker(LL(at(s.Rb.m, 0)), { radius: 8, color: '#fff', weight: 2.5, opacity: sel ? .35 : 1, fillColor: CFG_COLORS.rec, fillOpacity: sel ? .22 : .9, interactive: false }).addTo(calCloud);
 }
 renderHist();
 $('btnCalib').addEventListener('click', startCalib);
