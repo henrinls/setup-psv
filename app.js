@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.34.1';
+const VERSION = '3.35.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -212,6 +212,7 @@ function draw() {
   if (!hasGates()) {
     if (!placing && current.gateA) placing = current.single ? 'SD' : 'B'; // il manque la 2e porte, ou la direction de la porte unique
     if (placing) placeBanner();
+    else if (current.id) { setBanner('Il manque les portes.'); bannerBtns([{ t: '▶ Reprendre la mise en place', fn: () => { stopMeasure(); closeSheet(); placing = 'C'; syncPlaceBtn(); placeBanner(); } }]); } /* v3.35.0 : action directe */
     else setBanner('Pour commencer : ☰ → ＋ Nouvelle zone.');
     syncPlaceBtn();
     if (current.gateA) placeGateMarkers();
@@ -694,7 +695,18 @@ function syncPlaceBtn() {
     ? 'Touche un bouton puis la carte pour (re)placer cette porte. Appui long sur une porte pour déplacer cette porte seule ; appui long sur le trait blanc entre les portes pour déplacer tout le couloir (cap et longueur conservés).'
     : 'Porte unique : un seul axe de poser. Appui long sur la porte pour la déplacer, sur la flèche pour tourner le cap. « Porte 1 » ou « Porte 2 » repasse en couloir à deux portes.';
 }
-function placeBanner() { setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : placing === 'SD' ? 'Touche la carte dans la direction du poser (n\'importe quelle distance).' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`); }
+/* v3.35.0 (26 nov. 2026, Henri) : mise en place guidée d'une nouvelle zone dans le bandeau jaune : choix « Couloir à 2 portes » ou « Porte unique »,
+   puis pose (porte 1 → porte 2, ou porte unique → direction du poser), puis zoom optimisé. placing 'C' = choix en attente (toucher la carte ne fait rien). */
+function bannerBtns(btns) {
+  const b = $('banner'); if (b.classList.contains('hidden')) return;
+  const row = document.createElement('div'); row.className = 'bbtns';
+  btns.forEach(x => { const k = document.createElement('button'); k.textContent = x.t; if (x.ok) k.className = 'ok'; k.onclick = e => { e.stopPropagation(); x.fn(); }; row.append(k); });
+  b.insertBefore(row, b.querySelector('.bcancel'));
+}
+function placeBanner() {
+  if (placing === 'C') { setBanner('Couloir à deux portes ou porte unique ?'); bannerBtns([{ t: 'Couloir à 2 portes', fn: () => { placing = 'A'; syncPlaceBtn(); placeBanner(); } }, { t: 'Porte unique', fn: () => { placing = 'S'; syncPlaceBtn(); placeBanner(); } }]); return; }
+  setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : placing === 'SD' ? 'Touche la carte dans la direction du poser (n\'importe quelle distance).' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`);
+}
 ['A', 'B', 'S'].forEach(k => $('btnPlace' + k).addEventListener('click', () => {
   if (placing === k) { placing = null; placeBanner(); syncPlaceBtn(); return; } // 2e appui : annule
   if (k !== 'S' && current.single) { // retour au couloir à deux portes : la flèche de cap disparaît
@@ -774,6 +786,7 @@ map.on('click', e => {
   if (!placing && meas.active) { measureClick({ lat: e.latlng.lat, lng: e.latlng.lng }); return; }
   if (!placing) return;
   if (!current.id) { if (!namingZone) { namingZone = true; askZoneName().then(ok => { namingZone = false; if (ok) map.fire('click', e); }); } return; } // nom d'abord, puis le point
+  if (placing === 'C') return; // choix couloir / porte unique pas encore fait (bandeau)
   const p = { lat: e.latlng.lat, lng: e.latlng.lng };
   if (placing === 'S') { // porte unique : on pose la porte puis on demande le cap
     current.single = true; current.show = 'AB'; current.gateA = p; current.gateB = null;
@@ -788,12 +801,13 @@ map.on('click', e => {
     toast(`Axe de poser ${hdg(axisHeading())} (${cardOf(axisHeading())}). Appui long sur la flèche pour l'ajuster.`);
     return;
   }
+  const chain = !(current.gateA && current.gateB); // couloir en cours de pose (et non une porte reposée)
   current['gate' + placing] = p;
   const other = placing === 'A' ? 'B' : 'A';
   placing = current['gate' + other] ? null : other; // l'autre porte manque encore : on enchaîne
   placeBanner();
   if (!placing) toast('Couloir placé. Appui long : sur une porte pour la déplacer, sur le trait blanc pour déplacer le couloir.');
-  syncPlaceBtn(); persist(); redraw();
+  syncPlaceBtn(); persist(); redraw(); if (!placing && chain && hasGates()) fitFigure(); /* v3.35.0 : couloir posé → zoom optimisé */
 });
 map.on('zoomend', redraw);
 (function delayTouchRotate() {
@@ -990,8 +1004,8 @@ async function startNewZone(center, zoom) {
   zones.push(clone(current)); store.set('psv.zones', zones);
   resetGateMarkers(); stopMeasure();
   map.setView([center.lat, center.lng], current.zoom);
-  placing = 'A'; fillInputs(); persist(); redraw(); closeSheet();
-  toast(`« ${n} » créée : place tes portes (onglet Zones pour une porte unique)`);
+  placing = 'C'; fillInputs(); persist(); redraw(); closeSheet(); /* v3.35.0 : choix couloir / porte unique dans le bandeau */
+  toast(`« ${n} » créée`);
 }
 $('btnNewZone').addEventListener('click', () => { $('searchResults').innerHTML = ''; $('nzDlg').classList.remove('hidden'); });
 $('nzCancel').addEventListener('click', () => $('nzDlg').classList.add('hidden'));
