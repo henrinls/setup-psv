@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.29.1';
+const VERSION = '3.30.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -89,6 +89,7 @@ function persist() {
     const i = zones.findIndex(z => z.id === current.id);
     if (i >= 0) { zones[i] = clone(current); store.set('psv.zones', zones); }
   }
+  if (typeof Undo !== 'undefined') Undo.record(); /* undo.js : photo de l'état après chaque enregistrement */
 }
 
 // Noms affichés : cap de l'axe de poser sur 3 chiffres + G/D (jamais A/B à l'écran)
@@ -1478,3 +1479,12 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
     });
   }, { capture: true, passive: false });
 })();
+
+/* 26 nov. 2026 (Henri, toutes les applis carte) : boutons ↶ ↷ à côté de « Manœuvre » qui annule la dernière action (undo.js) */
+$('btnUndo').innerHTML = Undo.ICON; $('btnRedo').innerHTML = Undo.ICON_REDO; /* et ↷ juste à côté pour rétablir l'action annulée */
+Undo.init({ toast, ignore: [], state: () => ({ key: current.id || '', obj: current }),
+  restore: o => {
+    current = upgrade(Object.assign(o, { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing() }));
+    if (current.params) { PROFILE_KEYS.forEach(k => { if (k in current.params) profile[k] = current.params[k]; }); store.set('psv.profile', profile); zones.forEach(applyProfile); }
+    resetGateMarkers(); placing = null; setBanner(null); fillInputs(); /* Henri : ni onglet, ni fenêtre, ni zoom ne changent */ redraw(); persist();
+  } });
