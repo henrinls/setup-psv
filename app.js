@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.28.1';
+const VERSION = '3.29.0';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -170,7 +170,7 @@ function syncCompass() {
   $('btnNorth').classList.toggle('rotated', Math.abs(((b % 360) + 360) % 360) > 0.5);
 }
 let rotT = 0;
-map.on('rotate', () => { syncCompass(); rotateGateIcons(); current.bearing = map.getBearing(); clearTimeout(rotT); rotT = setTimeout(persist, 400); });
+map.on('rotate', () => { syncCompass(); rotateGateIcons(); if (typeof syncBarb === 'function') syncBarb(); current.bearing = map.getBearing(); clearTimeout(rotT); rotT = setTimeout(persist, 400); });
 
 const fig = L.layerGroup().addTo(map);
 const grads = L.layerGroup().addTo(map);
@@ -427,7 +427,24 @@ function placeGateMarkers() {
   if (current.gateB && !hideTip) { if (!markerB) markerB = makeGateMarker('B'); else syncGate(markerB, 'B'); }
   syncCorridorHit();
   rotateGateIcons();
+  syncBarb();
 }
+/* v3.29.0 (Henri) : barbule cyan du vent au sol (prévision à l'heure du panneau des vents) à côté de la porte d'entrée de chaque sens de poser affiché
+   (barb.js, même dessin que trace-isv) : au-delà du bout de la porte, du côté opposé à l'étape de base (le couloir et le setup restent dégagés) */
+function barbSide(c, toPx, gap) { /* centre de la barbule, en px de toPx */
+  const P = toPx(c.gate), A = toPx(Geo.fromLocal(c.gate, { x: c.geo.f.x * 10, y: c.geo.f.y * 10 })), S = toPx(c.setup);
+  const l = Math.hypot(A.x - P.x, A.y - P.y) || 1; let n = { x: -(A.y - P.y) / l, y: (A.x - P.x) / l };
+  if ((S.x - P.x) * n.x + (S.y - P.y) * n.y > 0) n = { x: -n.x, y: -n.y };
+  return { x: P.x + n.x * gap, y: P.y + n.y * gap };
+}
+function syncBarb() {
+  const w = Wind && Wind.surface ? Wind.surface() : null, on = {}, px = ll => map.latLngToContainerPoint(LL(ll));
+  configs().forEach(c => { on[c.key] = c; });
+  [['A', markerA], ['B', markerB]].forEach(([k, m]) => { const el = m && m.getElement && m.getElement(); if (!el) return; const c = on[k];
+    if (!c) { Barb.mount(el, null); return; }
+    const P = px(c.gate), q = barbSide(c, px, 46); Barb.mount(el, w, c.gate, map, () => ({ x: 17 + q.x - P.x, y: 17 + q.y - P.y })); });
+}
+
 function resetGateMarkers() {
   [markerA, markerB, markerMid].forEach(m => m && map.removeLayer(m));
   markerA = markerB = markerMid = null;
@@ -588,7 +605,7 @@ numFields.forEach(k => {
 // ---------- Bascules rapides sur la carte ----------
 // ---------- Vents de la prévision (panneau commun aux 3 applis, wind.js) : information seulement en PSV ----------
 Wind = WindPanel.make({
-  app: 'psv', decl: () => declHere(), onToggle: () => syncQuick(), onChange: () => syncElev(),
+  app: 'psv', decl: () => declHere(), onToggle: () => syncQuick(), onChange: () => { syncElev(); syncBarb(); },
   where: () => { const c = current.gateA || current.center; return c ? { id: current.id, lat: c.lat, lng: c.lng } : null; }
 });
 // ---------- Altitude du terrain (20 nov. 2026, même endroit dans les 3 applis : onglet Zones) ----------
@@ -1286,6 +1303,7 @@ async function renderPdfCanvas() {
   });
   gateMark('A', `Portes ${cardOf(headingOf('A'))}`);
   if (!current.single) gateMark('B', `Portes ${cardOf(headingOf('B'))}`);
+  { const w = Wind && Wind.surface ? Wind.surface() : null; configs().forEach(c => { const q = barbSide(c, toC, 46 * u); Barb.pdf(g, w, c.gate, toC, u, () => q); }); } /* v3.29.0 : barbule du vent au sol à la porte d'entrée */
 
   // ---- Flèche du nord (haut droite) ----
   const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)
