@@ -17,6 +17,7 @@
 #calPanel h4{margin:0 0 6px;font-size:15px}#calPanel .row{display:flex;align-items:center;gap:6px;margin:6px 0}#calPanel label{flex:0 0 auto;min-width:96px;font-size:13px;color:#ccc}
 #calPanel input{width:72px;font-size:16px;padding:6px;border-radius:7px;border:1px solid #666;background:#111;color:#fff;text-align:center}#calPanel .st button{min-width:38px;height:36px;padding:0 6px}
 #calPanel .btns{display:flex;gap:8px;margin-top:8px}#calPanel .btns button{flex:1;height:42px}#calPanel .hint{font-size:12px;color:#aaa;margin:2px 0 0}
+.calP span{display:block;width:16px;height:16px;margin:7px;border-radius:50%;border:2px solid #111;box-shadow:0 0 0 1.5px rgba(255,255,255,.8)}
 .calH span{display:block;width:22px;height:22px;border-radius:50%;background:#ff8c00;border:2px solid #fff;box-shadow:0 0 0 1.5px #000}
 #calChoose{position:fixed;inset:0;z-index:1700;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}#calChoose .box{background:#1c1c1c;border:1px solid #555;border-radius:12px;padding:14px;width:min(360px,calc(100vw - 32px));color:#fff}
 #calChoose .box p{margin:0 0 10px}#calChoose .box button{display:block;width:100%;height:44px;margin:6px 0}`;
@@ -51,11 +52,16 @@
     if (!mode) return false;
     if (mode !== 'place') return true; /* fenêtre du vent ouverte : la carte ne pose rien */
     const p = { lat: e.latlng.lat, lng: e.latlng.lng }, st = o.steps[idx];
-    pts.push(p);
-    mks.push(L.circleMarker([p.lat, p.lng], { radius: 8, color: '#111', weight: 2, fillColor: st.color || '#ff2020', fillOpacity: 1, interactive: false }).addTo(o.map));
+    pts.push(p); addPoint(pts.length - 1, st.color);
     idx++;
     if (idx < o.steps.length) banner(o.steps[idx].label); else { hideBanner(); wind(); }
     return true;
+  }
+  /* v3.31.3 / 1.16.2 (Henri) : un point posé reste déplaçable (appui long puis glisser), même pendant l'étape suivante */
+  function addPoint(i, color) {
+    const p = pts[i], m = L.marker([p.lat, p.lng], { zIndexOffset: 1400, icon: L.divIcon({ className: 'calP', iconSize: [30, 30], iconAnchor: [15, 15], html: `<span style="background:${color || '#ff2020'}"></span>` }) }).addTo(o.map);
+    mks.push(m);
+    const lp = root.longPressDrag; if (typeof lp === 'function') lp(m, ll => { pts[i] = { lat: ll.lat, lng: ll.lng }; m.setLatLng([ll.lat, ll.lng]); if (mode === 'wind') drawAxis(); }, () => { if (mode === 'wind') drawAxis(); });
   }
   function magOfTrue(t) { return Math.round(n360(t - (o.decl ? o.decl() : 0))); }
   function trueOfMag(m) { return n360(m + (o.decl ? o.decl() : 0)); }
@@ -67,6 +73,11 @@
     const P1 = Geo.fromLocal(A, { x: u.x * Lm, y: u.y * Lm }), P0 = Geo.fromLocal(A, { x: -u.x * Lm, y: -u.y * Lm });
     axis.push(L.polyline([[P0.lat, P0.lng], [P1.lat, P1.lng]], { color: '#000', weight: 4.5, opacity: .45, dashArray: '9 7', interactive: false }).addTo(map));
     axis.push(L.polyline([[P0.lat, P0.lng], [P1.lat, P1.lng]], { color: '#ff8c00', weight: 2.5, dashArray: '9 7', interactive: false }).addTo(map));
+    /* flèche dans le sens du vent, au bout sous le vent (v3.31.3 / 1.16.2, Henri) */
+    const T = map.latLngToContainerPoint([P0.lat, P0.lng]), C = map.latLngToContainerPoint([A.lat, A.lng]), dl = Math.hypot(T.x - C.x, T.y - C.y) || 1, dx = (T.x - C.x) / dl, dy = (T.y - C.y) / dl;
+    const wing = sg => map.containerPointToLatLng([T.x - dx * 16 + sg * dy * 9, T.y - dy * 16 - sg * dx * 9]), w1 = wing(1), w2 = wing(-1), head = [[w1.lat, w1.lng], [P0.lat, P0.lng], [w2.lat, w2.lng]];
+    axis.push(L.polyline(head, { color: '#000', weight: 5.5, opacity: .5, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(map));
+    axis.push(L.polyline(head, { color: '#ff8c00', weight: 3, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(map));
     if (!handle) {
       handle = L.marker([P1.lat, P1.lng], { draggable: true, zIndexOffset: 1500, icon: L.divIcon({ className: 'calH', iconSize: [26, 26], iconAnchor: [13, 13], html: '<span></span>' }) }).addTo(map);
       handle.on('drag', () => { const A2 = o.anchor(pts), v = Geo.toLocal(A2, handle.getLatLng()); if (Math.hypot(v.x, v.y) < 1) return; w.dir = n360(Math.atan2(v.x, v.y) * 180 / Math.PI); syncPanel(); drawAxis(); });
