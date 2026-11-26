@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.34.0';
+const VERSION = '3.34.1';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -846,7 +846,7 @@ function onResize() {
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
 
 let sheetSize = 'full';
-function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', sz === 'mini'); $('sheet').classList.toggle('full', sz === 'full'); }
+function setSheetSize(sz) { sheetSize = sz; $('sheet').classList.toggle('mini', sz === 'mini'); $('sheet').classList.toggle('full', sz === 'full'); try { if (calSel) setTimeout(calScroll, 260); } catch (e) {} }
 (function sheetGrab() {
   const g = $('grab'); let y0 = null, moved = false;
   const start = y => { y0 = y; moved = false; };
@@ -1542,7 +1542,12 @@ let calHist = store.get('psv.calibHist', []);
    (moyenne comprise) passent en transparence ; dans la liste, sa ligne est en surbrillance. Re-toucher = désélectionner ; toucher le fond
    de carte ailleurs (onglet Manœuvre ouvert) = désélectionner. Rien ne change d'onglet ni de taille de fenêtre. */
 let calSel = null;
-function calSelect(id) { calSel = calSel === id ? null : id; renderHist(); drawCalCloud(); }
+function calSelect(id, fromMap) { calSel = calSel === id ? null : id; renderHist(); drawCalCloud(); if (fromMap && calSel) calScroll(); }
+/* v3.34.1 (Henri) : un saut choisi sur la carte → la liste se place sur sa ligne (le contenu de la fenêtre défile, la fenêtre ne change ni d'onglet ni de taille) ;
+   et quand il remonte la fenêtre, la ligne sélectionnée est remise en vue */
+function calScroll() { const li = document.querySelector('#calHist li.sel'), sh = $('sheet'); if (!li || !sh || sh.classList.contains('hidden') || lastTab !== 'pilote') return;
+  const r = li.getBoundingClientRect(), b = sh.getBoundingClientRect(), tabs = sh.querySelector('.tabs'), top = b.top + (tabs ? tabs.offsetHeight : 50) + 70; /* sous les onglets et le titre collé */
+  if (r.top < top || r.bottom > b.bottom - 10) sh.scrollTop += r.top - top - Math.max(0, (b.bottom - top - r.height) / 3); }
 const saveHist = () => store.set('psv.calibHist', calHist);
 function recordCalib(c, what, r, gate) {
   gate = gate || c.gate;
@@ -1617,7 +1622,7 @@ function drawCalCloud() {
   const pt = (ll, col, e) => { const me = sel && e === sel;
     L.circleMarker(LL(ll), { radius: me ? 7 : 4, color: me ? '#fff' : '#111', weight: me ? 2.5 : 1, opacity: me || !sel ? 1 : .35, fillColor: col, fillOpacity: me ? 1 : dim, interactive: false }).addTo(calCloud);
     const hit = L.circleMarker(LL(ll), { radius: 14, stroke: false, fillOpacity: 0, interactive: true, bubblingMouseEvents: false }).addTo(calCloud); /* zone de toucher plus grande que le point */
-    hit.on('click', ev => { if (ev.originalEvent) L.DomEvent.stop(ev.originalEvent); calSelect(e.id); }); };
+    hit.on('click', ev => { if (ev.originalEvent) L.DomEvent.stop(ev.originalEvent); calSelect(e.id, true); }); };
   on.forEach(e => { const z = calZero(e); if (z.S) pt(at(z.S.back, z.S.side), CFG_COLORS.setup, e); if (z.R) pt(at(z.R.back, 0), CFG_COLORS.rec, e); });
   if (s.Sb) L.circleMarker(LL(at(s.Sb.m, s.Ss.m)), { radius: 8, color: '#fff', weight: 2.5, opacity: sel ? .35 : 1, fillColor: CFG_COLORS.setup, fillOpacity: sel ? .22 : .9, interactive: false }).addTo(calCloud);
   if (s.Rb) L.circleMarker(LL(at(s.Rb.m, 0)), { radius: 8, color: '#fff', weight: 2.5, opacity: sel ? .35 : 1, fillColor: CFG_COLORS.rec, fillOpacity: sel ? .22 : .9, interactive: false }).addTo(calCloud);
