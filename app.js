@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.32.0';
+const VERSION = '3.32.1';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -1427,6 +1427,9 @@ $('importZonesFile').addEventListener('change', async e => {
 // Importer une manœuvre : remplace ta manœuvre (on n'en a qu'une) ; les zones ne bougent pas.
 $('importProfFile').addEventListener('change', async e => {
   const d = await readJsonFile(e.target); if (!d) return;
+  if ((!d.profile || typeof d.profile !== 'object') && Array.isArray(d.calibHist)) { /* v3.32.1 : fichier d'historique d'étalonnage seul (ex. sauts d'exemple) : fusionné, la manœuvre ne change pas */
+    const have = new Set(calHist.map(e => e.id)); let n = 0; d.calibHist.forEach(e => { if (e && e.id && !have.has(e.id)) { calHist.push(e); n++; } });
+    calHist.sort((a, b) => b.t - a.t); saveHist(); renderHist(); redraw(); toast(`${n} saut${n > 1 ? 's' : ''} d'étalonnage importé${n > 1 ? 's' : ''}${fromWho(d)} (ta manœuvre ne change pas)`); return; }
   if (!d.profile || typeof d.profile !== 'object') { toast(Array.isArray(d.zones) ? 'Ce fichier contient des zones : importe-le depuis l\'onglet Zones' : 'Fichier illisible'); return; }
   PROFILE_KEYS.forEach(k => { if (d.profile[k] !== undefined) profile[k] = d.profile[k]; }); profile.legLen = legLenOf(profile); store.set('psv.profile', profile);
   if (Array.isArray(d.calibHist)) { const have = new Set(calHist.map(e => e.id)); d.calibHist.forEach(e => { if (e && e.id && !have.has(e.id)) calHist.push(e); }); calHist.sort((a, b) => b.t - a.t); saveHist(); renderHist(); } /* v3.32.0 : historique fusionné, sans doublons */
@@ -1586,6 +1589,7 @@ function applyCalibValues(z, times, what) {
   persist(); fillInputs(); redraw(); renderHist();
   toast(`Manœuvre mise à jour avec ${what} : ${done.join(' ; ')}`);
 }
+$('calWipe').addEventListener('click', async () => { if (!calHist.length) return; if (!(await ask(`Effacer tout l'historique d'étalonnage (${calHist.length} saut${calHist.length > 1 ? 's' : ''}) ? Ta manœuvre ne change pas.`))) return; calHist = []; saveHist(); renderHist(); redraw(); toast('Historique d\'étalonnage effacé'); }); /* v3.32.1 */
 $('calApplyAvg').addEventListener('click', () => { const s = calStats(); if (!s.n) return;
   applyCalibValues({ S: s.Sb ? { back: Math.round(s.Sb.m), side: Math.round(s.Ss.m) } : null, R: s.Rb ? { back: Math.round(s.Rb.m) } : null }, { t1: s.t1.m, t2: s.t2.m }, `la moyenne de ${s.n} saut${s.n > 1 ? 's' : ''}`); });
 /* nuage sur la carte (onglet Manœuvre ouvert) : sauts cochés placés à la porte d'entrée du 1er sens affiché, avec la manœuvre actuelle */
