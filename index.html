@@ -9,10 +9,10 @@
 <meta name="apple-mobile-web-app-title" content="Setup PSV">
 <meta name="theme-color" content="#111111">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-192.png?v=3.36.0">
+<link rel="apple-touch-icon" href="icon-192.png?v=3.36.1">
 <title>Setup pilotage sous voile</title>
 <link rel="stylesheet" href="vendor/leaflet.css">
-<link rel="stylesheet" href="style.css?v=3.36.0">
+<link rel="stylesheet" href="style.css?v=3.36.1">
 </head>
 <body>
 <div id="map"></div>
@@ -46,8 +46,10 @@
 </nav>
 
 <div id="windsBox" class="hidden">
+  <button id="t_x" class="wx" title="Fermer">✕</button>
   <div class="when"><button id="t_minus">−1 h</button><input type="date" id="t_date"><select class="hr" id="t_hour" title="Heure"><option value="00">00 h</option><option value="01">01 h</option><option value="02">02 h</option><option value="03">03 h</option><option value="04">04 h</option><option value="05">05 h</option><option value="06">06 h</option><option value="07">07 h</option><option value="08">08 h</option><option value="09">09 h</option><option value="10">10 h</option><option value="11">11 h</option><option value="12">12 h</option><option value="13">13 h</option><option value="14">14 h</option><option value="15">15 h</option><option value="16">16 h</option><option value="17">17 h</option><option value="18">18 h</option><option value="19">19 h</option><option value="20">20 h</option><option value="21">21 h</option><option value="22">22 h</option><option value="23">23 h</option></select><button id="t_plus">+1 h</button></div>
   <p class="hint" id="t_info"></p>
+  <p class="hint calhint">Étalonnage : touche une ligne pour reprendre son vent.</p>
   
   <div class="tw"><table id="windsTable"><thead><tr><th>Niveau</th><th>Hauteur</th><th>Axe (M)</th><th colspan="2">Force</th><th>Temp.</th><th>Hum.</th></tr></thead><tbody></tbody></table></div>
   <div class="grid2 pickrow"><button id="t_pick">📍 Point sur la carte</button><button id="t_unpick" class="hidden">↺ Revenir à la zone</button></div>
@@ -226,20 +228,20 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="vendor/leaflet.js?v=3.36.0"></script>
-<script src="vendor/leaflet-rotate.js?v=3.36.0"></script>
-<script src="geo.js?v=3.36.0"></script>
-<script src="undo.js?v=3.36.0"></script>
-<script src="calib.js?v=3.36.0"></script>
-<script src="barb.js?v=3.36.0"></script>
-<script src="wmm.js?v=3.36.0"></script>
-<script src="clubs.js?v=3.36.0"></script>
-<script src="wind.js?v=3.36.0"></script>
-<script src="windpick.js?v=3.36.0"></script>
-<script src="pdfview.js?v=3.36.0"></script>
-<script src="lpmove.js?v=3.36.0"></script>
-<script src="app.js?v=3.36.0"></script>
-<script src="showmenu.js?v=3.36.0"></script>
-<script src="photo.js?v=3.36.0"></script>
+<script src="vendor/leaflet.js?v=3.36.1"></script>
+<script src="vendor/leaflet-rotate.js?v=3.36.1"></script>
+<script src="geo.js?v=3.36.1"></script>
+<script src="undo.js?v=3.36.1"></script>
+<script src="calib.js?v=3.36.1"></script>
+<script src="barb.js?v=3.36.1"></script>
+<script src="wmm.js?v=3.36.1"></script>
+<script src="clubs.js?v=3.36.1"></script>
+<script src="wind.js?v=3.36.1"></script>
+<script src="windpick.js?v=3.36.1"></script>
+<script src="pdfview.js?v=3.36.1"></script>
+<script src="lpmove.js?v=3.36.1"></script>
+<script src="app.js?v=3.36.1"></script>
+<script src="showmenu.js?v=3.36.1"></script>
+<script src="photo.js?v=3.36.1"></script>
 </body>
 </html>

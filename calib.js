@@ -159,5 +159,13 @@
     if (was && o && o.onEnd) o.onEnd();
   }
   function cancel() { end(); if (root.toast) try { root.toast('Étalonnage annulé'); } catch (e) {} }
-  root.Calib = { start, onMapClick, choose, cancel, isActive: () => !!mode, get mode() { return mode; } };
+  /* 26 nov. 2026 (Henri, vidéo) : le tableau des vents ouvert pendant l'étalonnage passait sous la fenêtre du vent (« Fermer » caché).
+     hide(true) cache la fenêtre le temps du tableau (valeurs gardées), hide(false) la remet ; setWind = vent repris d'une ligne du tableau (dir vrai, m/s). */
+  function hide(on) { const p = $('calPanel'); if (p) p.classList.toggle('off', !!on); }
+  function setWind(x) {
+    if (mode !== 'wind' || !x) return false;
+    if (isFinite(x.dir)) w.dir = n360(+x.dir); if (isFinite(x.spd)) { w.spd = Math.max(0, Math.round(x.spd * 10) / 10); const s = $('c_spd'); if (s) s.value = String(w.spd).replace('.', ','); }
+    syncPanel(); drawAxis(); return true;
+  }
+  root.Calib = { start, onMapClick, choose, cancel, hide, setWind, isActive: () => !!mode, get mode() { return mode; } };
 })(typeof window !== 'undefined' ? window : globalThis);

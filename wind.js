@@ -77,6 +77,8 @@
   function make(opts) {
     const $ = id => document.getElementById(id);
     const mem = {}, failed = {};
+    const calWind = () => typeof Calib !== 'undefined' && Calib.mode === 'wind'; /* étalonnage en cours, à l'étape du vent (calib.js) */
+    const toast2 = t => { try { if (typeof toast === 'function') toast(t); } catch (e) {} };
     let when = nowWhen(), busy = false, userSet = false; // userSet : heure choisie à la main (sinon on suit l'heure actuelle)
     let pick = null, busyPick = false; // point choisi sur la carte pour le tableau (windpick.js, 21 nov. 2026) ; la zone reste la référence des calculs
     const showZ = () => pick ? { id: '__pick', lat: pick.lat, lng: pick.lng } : opts.where();
@@ -134,15 +136,18 @@
       rows(pr).forEach(x => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${x.lab}</td><td>${fmtInt(x.h)} m</td><td>${hdgN(x.dir)}</td><td>${Math.round(x.spd * KT)} kt</td><td>${fmt1(x.spd)} m/s</td><td>${x.T == null ? '–' : Math.round(x.T) + ' °C'}</td><td>${x.RH == null ? '–' : Math.round(x.RH) + ' %'}</td>`; // unité à côté de chaque chiffre
+        if (calWind()) { tr.className = 'pickw'; tr.addEventListener('click', () => { if (Calib.setWind({ dir: x.dir, spd: x.spd })) { close(); toast2(`Vent repris : ${hdgN(x.dir)} · ${fmt1(x.spd)} m/s (${x.lab})`); } }); } /* 26/11 : pendant l'étalonnage, toucher une ligne = reprendre son vent */
         tb.append(tr);
       });
+      box.classList.toggle('calpick', !!calWind());
     }
     function setWhen(w) { when = w; userSet = true; render(); if (opts.onChange) opts.onChange(); ensurePanel(false); }
     const isOpen = () => !$('windsBox').classList.contains('hidden');
-    function open() { $('windsBox').classList.remove('hidden'); render(); ensurePanel(false); if (opts.onToggle) opts.onToggle(true); }
+    /* 26/11 (Henri) : une seule fenêtre à la fois — pendant un étalonnage, la fenêtre du vent se cache tant que le tableau est ouvert */
+    function open() { $('windsBox').classList.remove('hidden'); if (calWind()) Calib.hide(true); render(); ensurePanel(false); if (opts.onToggle) opts.onToggle(true); }
     function setPoint(p) { pick = p; render(); if (pick && isOpen()) ensurePick(false); }
-    function close() { $('windsBox').classList.add('hidden'); if (opts.onToggle) opts.onToggle(false); }
-    $('t_close').addEventListener('click', close);
+    function close() { $('windsBox').classList.add('hidden'); if (typeof Calib !== 'undefined' && Calib.hide) Calib.hide(false); if (opts.onToggle) opts.onToggle(false); }
+    $('t_close').addEventListener('click', close); if ($('t_x')) $('t_x').addEventListener('click', close); /* ✕ en haut à droite (26/11) */
     $('t_minus').addEventListener('click', () => setWhen(shiftWhen(when, -1)));
     $('t_plus').addEventListener('click', () => setWhen(shiftWhen(when, 1)));
     $('t_now').addEventListener('click', () => { when = nowWhen(); userSet = false; render(); if (opts.onChange) opts.onChange(); ensurePanel(true); });
