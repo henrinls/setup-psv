@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.29.0';
+const VERSION = '3.29.1';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -429,25 +429,27 @@ function placeGateMarkers() {
   rotateGateIcons();
   syncBarb();
 }
-/* v3.29.0 (Henri) : barbule cyan du vent au sol (prévision à l'heure du panneau des vents) à côté de la porte d'entrée de chaque sens de poser affiché
-   (barb.js, même dessin que trace-isv) : au-delà du bout de la porte, du côté opposé à l'étape de base (le couloir et le setup restent dégagés) */
-function barbSide(c, toPx, gap) { /* centre de la barbule, en px de toPx */
-  const P = toPx(c.gate), A = toPx(Geo.fromLocal(c.gate, { x: c.geo.f.x * 10, y: c.geo.f.y * 10 })), S = toPx(c.setup);
-  const l = Math.hypot(A.x - P.x, A.y - P.y) || 1; let n = { x: -(A.y - P.y) / l, y: (A.x - P.x) / l };
-  if ((S.x - P.x) * n.x + (S.y - P.y) * n.y > 0) n = { x: -n.x, y: -n.y };
-  return { x: P.x + n.x * gap, y: P.y + n.y * gap };
+/* v3.29.0 puis v3.29.1 (Henri) : UNE barbule cyan du vent au sol (prévision à l'heure du panneau des vents, barb.js, même dessin que trace-isv),
+   ENTRE les deux portes (au milieu du couloir, à côté du trait blanc) ou à côté de la porte unique ; côté opposé au setup affiché */
+function barbSpot(toPx, s) { /* { ll, c } : point d'accroche et centre de la barbule, en px de toPx (échelle s) */
+  if (!hasGates()) return null;
+  const single = !!current.single, ll = single ? current.gateA : { lat: (current.gateA.lat + current.gateB.lat) / 2, lng: (current.gateA.lng + current.gateB.lng) / 2 };
+  const P = toPx(ll), A = toPx(current.gateA), B = toPx(current.gateB), l = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+  let n = { x: -(B.y - A.y) / l, y: (B.x - A.x) / l }; const c0 = configs()[0];
+  if (c0) { const S = toPx(c0.setup); if ((S.x - P.x) * n.x + (S.y - P.y) * n.y > 0) n = { x: -n.x, y: -n.y }; }
+  const gap = (single ? 46 : 20) * s; return { ll, c: { x: P.x + n.x * gap, y: P.y + n.y * gap } };
 }
+let barbMk = null;
 function syncBarb() {
-  const w = Wind && Wind.surface ? Wind.surface() : null, on = {}, px = ll => map.latLngToContainerPoint(LL(ll));
-  configs().forEach(c => { on[c.key] = c; });
-  [['A', markerA], ['B', markerB]].forEach(([k, m]) => { const el = m && m.getElement && m.getElement(); if (!el) return; const c = on[k];
-    if (!c) { Barb.mount(el, null); return; }
-    const P = px(c.gate), q = barbSide(c, px, 46); Barb.mount(el, w, c.gate, map, () => ({ x: 17 + q.x - P.x, y: 17 + q.y - P.y })); });
+  const w = Wind && Wind.surface ? Wind.surface() : null, px = ll => map.latLngToContainerPoint(LL(ll)), sp = barbSpot(px, 1);
+  if (!sp || !w) { if (barbMk) { map.removeLayer(barbMk); barbMk = null; } return; }
+  if (!barbMk) barbMk = L.marker(LL(sp.ll), { interactive: false, keyboard: false, zIndexOffset: 950, icon: L.divIcon({ className: 'barbMk', iconSize: [0, 0], html: '' }) }).addTo(map);
+  else barbMk.setLatLng(LL(sp.ll));
+  const P = px(sp.ll); Barb.mount(barbMk.getElement(), w, sp.ll, map, () => ({ x: sp.c.x - P.x, y: sp.c.y - P.y }));
 }
-
 function resetGateMarkers() {
-  [markerA, markerB, markerMid].forEach(m => m && map.removeLayer(m));
-  markerA = markerB = markerMid = null;
+  [markerA, markerB, markerMid, barbMk].forEach(m => m && map.removeLayer(m));
+  markerA = markerB = markerMid = barbMk = null;
   if (corrHit && map.hasLayer(corrHit.line)) map.removeLayer(corrHit.line);
 }
 
@@ -1303,7 +1305,7 @@ async function renderPdfCanvas() {
   });
   gateMark('A', `Portes ${cardOf(headingOf('A'))}`);
   if (!current.single) gateMark('B', `Portes ${cardOf(headingOf('B'))}`);
-  { const w = Wind && Wind.surface ? Wind.surface() : null; configs().forEach(c => { const q = barbSide(c, toC, 46 * u); Barb.pdf(g, w, c.gate, toC, u, () => q); }); } /* v3.29.0 : barbule du vent au sol à la porte d'entrée */
+  { const w = Wind && Wind.surface ? Wind.surface() : null, sp = barbSpot(toC, u); if (sp) Barb.pdf(g, w, sp.ll, toC, u, () => sp.c); } /* v3.29.1 : une barbule du vent au sol, entre les portes ou à la porte unique */
 
   // ---- Flèche du nord (haut droite) ----
   const nx = 85 * u, ny = 95 * u, na = pageAngle(0); // coin haut gauche (les libellés partent vers la droite)
