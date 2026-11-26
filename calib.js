@@ -4,7 +4,7 @@
    (force en m/s, axe d'où il vient en degrés magnétiques avec −5 −1 +1 +5) et, si l'appli le veut, une hauteur.
    L'axe du vent est dessiné en pointillés orange passant par le point de référence (cible ou porte) ; une poignée à son bout
    (côté d'où vient le vent) se fait glisser pour le tourner. Valider rend la main à l'appli (onOk), qui met à jour la manœuvre.
-   opts de start : { map, steps: [{ label, color }], anchor: () => ll, wind: { dir (vrai), spd (m/s) }, decl: () => degrés,
+   opts de start : { map, steps: [{ label, color }], anchor: pts => ll (reçoit les points posés), wind: { dir (vrai), spd (m/s) }, decl: () => degrés,
                      height: v => hauteur par défaut (ou null : pas de hauteur demandée), hLabel, title, onOk({ pts, dir, spd, h }), onEnd() } */
 (function (root) {
   const $ = id => document.getElementById(id);
@@ -60,7 +60,7 @@
   function magOfTrue(t) { return Math.round(n360(t - (o.decl ? o.decl() : 0))); }
   function trueOfMag(m) { return n360(m + (o.decl ? o.decl() : 0)); }
   function drawAxis() {
-    const map = o.map, A = o.anchor(); if (!A) return;
+    const map = o.map, A = o.anchor(pts); if (!A) return;
     axis.forEach(l => map.hasLayer(l) && map.removeLayer(l)); axis = [];
     const c = map.latLngToContainerPoint([A.lat, A.lng]), q = map.containerPointToLatLng([c.x + 100, c.y]), mpp = map.distance([A.lat, A.lng], q) / 100 || 1;
     const Lm = 150 * mpp, r = w.dir * Math.PI / 180, u = { x: Math.sin(r), y: Math.cos(r) };
@@ -69,7 +69,7 @@
     axis.push(L.polyline([[P0.lat, P0.lng], [P1.lat, P1.lng]], { color: '#ff8c00', weight: 2.5, dashArray: '9 7', interactive: false }).addTo(map));
     if (!handle) {
       handle = L.marker([P1.lat, P1.lng], { draggable: true, zIndexOffset: 1500, icon: L.divIcon({ className: 'calH', iconSize: [26, 26], iconAnchor: [13, 13], html: '<span></span>' }) }).addTo(map);
-      handle.on('drag', () => { const A2 = o.anchor(), v = Geo.toLocal(A2, handle.getLatLng()); if (Math.hypot(v.x, v.y) < 1) return; w.dir = n360(Math.atan2(v.x, v.y) * 180 / Math.PI); syncPanel(); drawAxis(); });
+      handle.on('drag', () => { const A2 = o.anchor(pts), v = Geo.toLocal(A2, handle.getLatLng()); if (Math.hypot(v.x, v.y) < 1) return; w.dir = n360(Math.atan2(v.x, v.y) * 180 / Math.PI); syncPanel(); drawAxis(); });
       handle.on('dragend', () => drawAxis());
     } else if (!handle.dragging || !handle.dragging._draggable || !handle.dragging._draggable._moving) handle.setLatLng([P1.lat, P1.lng]);
   }

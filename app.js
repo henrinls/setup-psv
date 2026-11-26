@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.31.0';
+const VERSION = '3.31.1';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -1505,26 +1505,32 @@ async function startCalib() {
   let cs = configs(); if (!cs.length) { current.show = 'AB'; cs = configs(); }
   let c = cs[0];
   if (cs.length > 1) { const k = await Calib.choose('Pour quel sens de poser ?', cs.map(x => ({ label: `${cfgName(x)} (cap ${hdg(x.heading)})`, value: x.key }))); if (!k) return; c = cs.find(x => x.key === k); }
+  /* v3.31.1 (Henri) : option inverse — on pose d'abord le setup (et / ou le snap) là où il a eu lieu, puis la porte correspondante,
+     seulement pour le calcul : la porte de la zone ne bouge pas. Même sens de poser (cap et virage) que le sens choisi. */
+  const ref = await Calib.choose('Porte de référence pour le calcul ?', [{ label: 'La porte de la zone', value: 'Z' }, { label: 'Je pose la porte (calcul seulement, la zone ne change pas)', value: 'P' }]);
+  if (!ref) return;
   closeSheet(); placing = null; setBanner(null);
   const steps = [];
   if (what.includes('S')) steps.push({ label: `Touche la carte à l'endroit de ton point de setup (${cfgName(c)}).`, color: CFG_COLORS.setup });
   if (what.includes('R')) steps.push({ label: `Touche la carte à l'endroit de ton point de snap (${cfgName(c)}).`, color: CFG_COLORS.rec });
-  const sw = Wind && Wind.surface ? Wind.surface() : null;
-  Calib.start({ map, steps, anchor: () => c.gate, anchorName: 'la porte d\'entrée', decl: () => declHere(), title: 'Vent pendant ce saut',
+  if (ref === 'P') steps.push({ label: `Touche la carte à l'endroit de la porte d'entrée correspondante (calcul seulement).`, color: '#ff8c00' });
+  const sw = Wind && Wind.surface ? Wind.surface() : null, gateOf = pts => ref === 'P' ? pts[pts.length - 1] : c.gate;
+  Calib.start({ map, steps, anchor: pts => gateOf(pts || []), anchorName: ref === 'P' ? 'la porte posée' : 'la porte d\'entrée', decl: () => declHere(), title: 'Vent pendant ce saut',
     wind: { dir: sw ? sw.dir : c.heading, spd: sw ? sw.spd : 0 },
-    onOk: r => applyCalib(c, what, r) });
+    onOk: r => applyCalib(c, what, r, gateOf(r.pts)) });
 }
-function applyCalib(c, what, r) {
+function applyCalib(c, what, r, gate) {
+  gate = gate || c.gate;
   const p = Object.assign({}, current.params, { heading: c.heading, turn: c.turn }), g = Geo.turnGeom(p), wr = r.dir * Math.PI / 180;
   const wv = { x: -Math.sin(wr) * r.spd, y: -Math.cos(wr) * r.spd }; /* vers où pousse le vent (m/s) */
   const t1 = +p.t1 || 0, t2 = +p.t2 || 0, done = []; let i = 0;
   if (what.includes('S')) {
-    const q = Geo.toLocal(c.gate, r.pts[i++]), S0 = { x: q.x + wv.x * (t1 + t2), y: q.y + wv.y * (t1 + t2) };
+    const q = Geo.toLocal(gate, r.pts[i++]), S0 = { x: q.x + wv.x * (t1 + t2), y: q.y + wv.y * (t1 + t2) };
     const back = Math.round(-(S0.x * g.f.x + S0.y * g.f.y)), side = Math.round(g.side * (S0.x * g.r.x + S0.y * g.r.y));
     setManeuver('setupBack', back); setManeuver('setupSide', side); done.push(`setup ${back} m arrière · ${side} m latéral`);
   }
   if (what.includes('R')) {
-    const q = Geo.toLocal(c.gate, r.pts[i++]), R0 = { x: q.x + wv.x * t2, y: q.y + wv.y * t2 };
+    const q = Geo.toLocal(gate, r.pts[i++]), R0 = { x: q.x + wv.x * t2, y: q.y + wv.y * t2 };
     const back = Math.round(-(R0.x * g.f.x + R0.y * g.f.y)); setManeuver('recBack', back); done.push(`snap ${back} m arrière`);
   }
   store.set('psv.profile', profile); zones.forEach(applyProfile); store.set('psv.zones', zones);
