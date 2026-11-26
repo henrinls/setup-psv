@@ -10,7 +10,7 @@ document.addEventListener('focusout', e => {
   if (!e.target || !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   setTimeout(() => { const a = document.activeElement; if (!a || !/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) window.scrollTo(0, 0); }, 60);
 });
-const VERSION = '3.35.0';
+const VERSION = '3.35.1';
 const APP_ID = 'psv';
 // Fonds de carte : Esri (monde entier) ou photos aériennes IGN (France, licence ouverte : hors-ligne et PDF autorisés)
 const BASEMAPS = {
@@ -703,6 +703,19 @@ function bannerBtns(btns) {
   btns.forEach(x => { const k = document.createElement('button'); k.textContent = x.t; if (x.ok) k.className = 'ok'; k.onclick = e => { e.stopPropagation(); x.fn(); }; row.append(k); });
   b.insertBefore(row, b.querySelector('.bcancel'));
 }
+/* v3.35.1 (26 nov. 2026, Henri) : quand on crée un couloir à deux portes, afficher par défaut le circuit qui pose face au vent de la barbule
+   (vent au sol de la prévision, Wind.surface) et masquer l'autre. Seulement à la pose du couloir, jamais ensuite. Prévision pas encore là :
+   on l'attend (Wind.ensure). Vent nul ou pas de prévision : les deux restent affichés. */
+function showIntoWind() {
+  if (current.single || !hasGates()) return;
+  const zid = current.id, go = () => {
+    if (current.id !== zid || current.single || !hasGates() || current.show !== 'AB') return; // zone changée ou affichage déjà choisi entre-temps
+    const w = Wind && Wind.surface ? Wind.surface() : null; if (!w || !(w.spd > 0.2)) return;
+    const d = h => Math.abs(((h - w.dir) % 360 + 540) % 360 - 180), k = d(headingOf('A')) <= d(headingOf('B')) ? 'A' : 'B', o = k === 'A' ? 'B' : 'A';
+    current.show = k; persist(); redraw(); toast(`Circuit ${cardFull(headingOf(k))} affiché (pose face au vent) ; ${cardFull(headingOf(o))} masqué (Affichage pour le voir).`);
+  };
+  if (Wind && Wind.surface && Wind.surface()) go(); else if (Wind && Wind.ensure) Promise.resolve(Wind.ensure(false)).then(go, () => {});
+}
 function placeBanner() {
   if (placing === 'C') { setBanner('Couloir à deux portes ou porte unique ?'); bannerBtns([{ t: 'Couloir à 2 portes', fn: () => { placing = 'A'; syncPlaceBtn(); placeBanner(); } }, { t: 'Porte unique', fn: () => { placing = 'S'; syncPlaceBtn(); placeBanner(); } }]); return; }
   setBanner(!placing ? null : placing === 'S' ? 'Touche la carte pour placer la porte unique.' : placing === 'SD' ? 'Touche la carte dans la direction du poser (n\'importe quelle distance).' : `Touche la carte pour placer la porte ${placing === 'A' ? 1 : 2}.`);
@@ -807,6 +820,7 @@ map.on('click', e => {
   placing = current['gate' + other] ? null : other; // l'autre porte manque encore : on enchaîne
   placeBanner();
   if (!placing) toast('Couloir placé. Appui long : sur une porte pour la déplacer, sur le trait blanc pour déplacer le couloir.');
+  if (!placing && chain && hasGates()) showIntoWind(); /* v3.35.1 : à la création, seul le circuit face au vent est affiché */
   syncPlaceBtn(); persist(); redraw(); if (!placing && chain && hasGates()) fitFigure(); /* v3.35.0 : couloir posé → zoom optimisé */
 });
 map.on('zoomend', redraw);

@@ -1,5 +1,5 @@
 // Service worker : appli disponible hors-ligne + images satellite en cache.
-const APP_CACHE = 'psv-app-v3.35.0';
+const APP_CACHE = 'psv-app-v3.35.1';
 const TILE_CACHE = 'psv-tiles-v2';
 const APP_FILES = ['./', 'index.html', 'style.css', 'geo.js', 'undo.js', 'calib.js', 'barb.js', 'clubs.js', 'wmm.js', 'wind.js', 'lpmove.js', 'app.js', 'showmenu.js', 'photo.js', 'windpick.js', 'pdfview.js', 'vendor/pdfjs/pdf.min.js', 'vendor/pdfjs/pdf.worker.min.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'vendor/leaflet.js', 'vendor/leaflet-rotate.js', 'vendor/leaflet.css', 'vendor/jspdf.umd.min.js',
